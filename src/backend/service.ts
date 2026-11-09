@@ -1,5 +1,6 @@
 /**
- * The service secrets.store 1.0.0, for other plugins (docs/service.md).
+ * The service openbao-secrets.store 1.0.0, for other plugins
+ * (docs/service.md).
  *
  * Core checks the "openbao-secrets.use" permission for the acting user
  * before every call and runs the call as that user, so the user comes from
@@ -24,14 +25,19 @@ import {
   type SecretEntry,
 } from "./secrets.js";
 
-export const SERVICE = "secrets.store";
+export const SERVICE = "openbao-secrets.store";
 
 export type Area = "user" | "shared" | { plugin: string; key: string };
 
 export interface SecretsStore {
   status(): Promise<{ connected: boolean; backend: string }>;
   bindPlugin(pluginId: string): Promise<void>;
-  put(area: Area, name: string, value: string, options?: PutOptions): Promise<void>;
+  put(
+    area: Area,
+    name: string,
+    value: string,
+    options?: PutOptions,
+  ): Promise<void>;
   get(area: Area, name: string): Promise<string | null>;
   remove(area: Area, name: string): Promise<boolean>;
   list(area: Area, prefix?: string): Promise<ServiceEntry[]>;
@@ -51,7 +57,8 @@ export function createSecretsStore(
 ): SecretsStore {
   function actor(): string {
     const userId = ctx.currentActor();
-    if (!userId) throw new AreaError("secrets.store needs an acting user", 401);
+    if (!userId)
+      throw new AreaError("openbao-secrets.store needs an acting user", 401);
     return userId;
   }
 
@@ -82,11 +89,14 @@ export function createSecretsStore(
     }
     if (area === "plugin") {
       throw new AreaError(
-        'the plugin area is { plugin: <your id>, key }: call bindPlugin(<your id>) first (docs/service.md)',
+        "the plugin area is { plugin: <your id>, key }: call bindPlugin(<your id>) first (docs/service.md)",
         400,
       );
     }
     if (area && typeof area === "object") {
+      // Core already checks "use" before every service call; checked here
+      // too so the rule holds whoever calls this object.
+      await need("use");
       const pluginId = await areas.verify(area);
       return { ref: { kind: "plugin", pluginId }, label: `plugin:${pluginId}` };
     }
@@ -105,7 +115,7 @@ export function createSecretsStore(
         action: `openbao_secrets_service_${method}`,
         resourceType: "openbao_secret",
         resourceName: target().slice(0, 250),
-        details: `secrets.store ${method}`,
+        details: `openbao-secrets.store ${method}`,
         success: true,
       });
       return result;
@@ -114,7 +124,7 @@ export function createSecretsStore(
         action: `openbao_secrets_service_${method}`,
         resourceType: "openbao_secret",
         resourceName: target().slice(0, 250),
-        details: `secrets.store ${method}`,
+        details: `openbao-secrets.store ${method}`,
         success: false,
         errorMessage: error instanceof Error ? error.message : "failed",
       });
@@ -148,51 +158,73 @@ export function createSecretsStore(
     },
 
     async put(area, name, value, options) {
-      return audited("put", () => target(area, name), async () => {
-        const { ref } = await resolve(area, true);
-        await secrets.put(ref, checkName(name), value, options, actor());
-      });
+      return audited(
+        "put",
+        () => target(area, name),
+        async () => {
+          const { ref } = await resolve(area, true);
+          await secrets.put(ref, checkName(name), value, options, actor());
+        },
+      );
     },
 
     async get(area, name) {
-      return audited("get", () => target(area, name), async () => {
-        const { ref } = await resolve(area, false);
-        return secrets.get(ref, checkName(name));
-      });
+      return audited(
+        "get",
+        () => target(area, name),
+        async () => {
+          const { ref } = await resolve(area, false);
+          return secrets.get(ref, checkName(name));
+        },
+      );
     },
 
     async remove(area, name) {
-      return audited("remove", () => target(area, name), async () => {
-        const { ref } = await resolve(area, true);
-        return secrets.remove(ref, checkName(name));
-      });
+      return audited(
+        "remove",
+        () => target(area, name),
+        async () => {
+          const { ref } = await resolve(area, true);
+          return secrets.remove(ref, checkName(name));
+        },
+      );
     },
 
     async list(area, prefix) {
-      return audited("list", () => target(area, prefix ?? ""), async () => {
-        const { ref } = await resolve(area, false);
-        const entries = await secrets.list(ref, checkPrefix(prefix));
-        return entries.map(
-          ({ name, createdAt, updatedAt, createdBy, expiresAt, note }) => ({
-            name,
-            createdAt,
-            updatedAt,
-            createdBy,
-            expiresAt,
-            note,
-          }),
-        );
-      });
+      return audited(
+        "list",
+        () => target(area, prefix ?? ""),
+        async () => {
+          const { ref } = await resolve(area, false);
+          const entries = await secrets.list(ref, checkPrefix(prefix));
+          return entries.map(
+            ({ name, createdAt, updatedAt, createdBy, expiresAt, note }) => ({
+              name,
+              createdAt,
+              updatedAt,
+              createdBy,
+              expiresAt,
+              note,
+            }),
+          );
+        },
+      );
     },
 
     async removePrefix(area, prefix) {
-      return audited("removePrefix", () => target(area, prefix), async () => {
-        const { ref } = await resolve(area, true);
-        if (typeof prefix !== "string") {
-          throw new InputError('removePrefix needs a prefix ("" for the whole area)');
-        }
-        return secrets.removePrefix(ref, checkPrefix(prefix));
-      });
+      return audited(
+        "removePrefix",
+        () => target(area, prefix),
+        async () => {
+          const { ref } = await resolve(area, true);
+          if (typeof prefix !== "string") {
+            throw new InputError(
+              'removePrefix needs a prefix ("" for the whole area)',
+            );
+          }
+          return secrets.removePrefix(ref, checkPrefix(prefix));
+        },
+      );
     },
   };
 }

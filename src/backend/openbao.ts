@@ -84,6 +84,7 @@ export function createOpenBao(deps: {
   const now = deps.now ?? Date.now;
   let session: Session | null = null;
   let loggingIn: Promise<Session> | null = null;
+  let renewing: Promise<Session> | null = null;
 
   /** One request to OpenBao. Never throws on an HTTP status; callers decide. */
   async function send(
@@ -94,7 +95,8 @@ export function createOpenBao(deps: {
   ): Promise<Answer> {
     const headers: Record<string, string> = {};
     if (options.token) headers["X-Vault-Token"] = options.token;
-    if (options.body !== undefined) headers["Content-Type"] = "application/json";
+    if (options.body !== undefined)
+      headers["Content-Type"] = "application/json";
     const url = `${config.address}/v1/${encodePath(path)}${options.query ?? ""}`;
     let response: Response;
     try {
@@ -154,7 +156,10 @@ export function createOpenBao(deps: {
       body: { role_id: config.roleId, secret_id: secretId },
     });
     if (answer.status !== 200) {
-      throw new OpenBaoError(describe("AppRole login", answer.status), answer.status);
+      throw new OpenBaoError(
+        describe("AppRole login", answer.status),
+        answer.status,
+      );
     }
     return fromAuth(answer.body?.auth);
   }
@@ -176,7 +181,10 @@ export function createOpenBao(deps: {
       body: {},
     });
     if (answer.status !== 200) {
-      throw new OpenBaoError(describe("Token renewal", answer.status), answer.status);
+      throw new OpenBaoError(
+        describe("Token renewal", answer.status),
+        answer.status,
+      );
     }
     return fromAuth(answer.body?.auth);
   }
@@ -189,15 +197,23 @@ export function createOpenBao(deps: {
       return (await freshSession(config)).token;
     }
     if (at >= current.renewAt) {
-      if (current.renewable) {
-        try {
-          session = await renew(config, current);
-          return session.token;
-        } catch {
-          // Past its maximum time, or revoked: log in again.
-        }
+      // Renews once even when several requests ask at the same time.
+      if (!renewing) {
+        renewing = (async () => {
+          if (current.renewable) {
+            try {
+              session = await renew(config, current);
+              return session;
+            } catch {
+              // Past its maximum time, or revoked: log in again.
+            }
+          }
+          return freshSession(config);
+        })().finally(() => {
+          renewing = null;
+        });
       }
-      return (await freshSession(config)).token;
+      return (await renewing).token;
     }
     return current.token;
   }
@@ -244,11 +260,18 @@ export function createOpenBao(deps: {
         token: wrappingToken,
         body: {},
       });
-      if (answer.status === 400 || answer.status === 403 || answer.status === 404) {
+      if (
+        answer.status === 400 ||
+        answer.status === 403 ||
+        answer.status === 404
+      ) {
         throw new OpenBaoError(WRAP_TOKEN_SPENT, answer.status);
       }
       if (answer.status !== 200) {
-        throw new OpenBaoError(describe("Unwrap", answer.status), answer.status);
+        throw new OpenBaoError(
+          describe("Unwrap", answer.status),
+          answer.status,
+        );
       }
       const secretId = answer.body?.data?.secret_id;
       if (typeof secretId !== "string" || !secretId) {
@@ -379,8 +402,15 @@ export function createOpenBao(deps: {
     async destroy(path: string): Promise<void> {
       const config = await readConfig(ctx);
       const answer = await authed("DELETE", metadataPath(config, path));
-      if (answer.status !== 200 && answer.status !== 204 && answer.status !== 404) {
-        throw new OpenBaoError(describe("Delete", answer.status), answer.status);
+      if (
+        answer.status !== 200 &&
+        answer.status !== 204 &&
+        answer.status !== 404
+      ) {
+        throw new OpenBaoError(
+          describe("Delete", answer.status),
+          answer.status,
+        );
       }
     },
   };

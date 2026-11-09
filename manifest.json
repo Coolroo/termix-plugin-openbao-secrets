@@ -1,0 +1,124 @@
+{
+  "id": "openbao-secrets",
+  "name": "OpenBao Secrets",
+  "version": "1.0.0",
+  "description": "Keep secrets in OpenBao or HashiCorp Vault, type them at a terminal's password prompt, and let other plugins store theirs.",
+  "author": {
+    "name": "Coolroo"
+  },
+  "license": "Apache-2.0",
+  "repository": "https://github.com/Coolroo/termix-plugin-openbao-secrets",
+  "docs": "https://github.com/Coolroo/termix-plugin-openbao-secrets/tree/main/docs",
+  "category": "Access & Security",
+  "icon": "KeyRound",
+  "features": [
+    "One connection to OpenBao or HashiCorp Vault (KV v2), set up by an admin",
+    "The AppRole secret ID comes in a response-wrapped token and is never shown again",
+    "A Secrets tab for your own secrets and shared ones, by name, in folders",
+    "A saved value is never sent to the browser for display: no reveal, no copy",
+    "Type a secret at the cursor of an open terminal, for a password prompt",
+    "A service other plugins use to store, read and delete secrets in their own area",
+    "Secrets with an expiry time are deleted when it passes",
+    "Every read, write and delete is in the audit log, never with the value"
+  ],
+  "env": [],
+  "engine": {
+    "termix": ">=26.11.0",
+    "api": "^1.13"
+  },
+  "capabilities": [
+    "db:own",
+    "secrets:own",
+    "network:outbound",
+    "network:serve",
+    "ui:surface"
+  ],
+  "provides": [
+    {
+      "service": "openbao-secrets.store",
+      "version": "1.0.0",
+      "permission": "openbao-secrets.use"
+    }
+  ],
+  "contributes": {
+    "tabs": [
+      {
+        "id": "openbao-secrets",
+        "titleKey": "tab.title",
+        "icon": "KeyRound",
+        "openFrom": ["rail"]
+      }
+    ],
+    "permissions": [
+      {
+        "name": "use",
+        "titleKey": "permissions.use.title",
+        "descriptionKey": "permissions.use.description",
+        "defaultRoles": ["admin"]
+      },
+      {
+        "name": "manage-shared",
+        "titleKey": "permissions.manageShared.title",
+        "descriptionKey": "permissions.manageShared.description",
+        "defaultRoles": ["admin"]
+      }
+    ],
+    "settings": {
+      "admin": [
+        {
+          "key": "address",
+          "type": "string",
+          "labelKey": "settings.address.label",
+          "descriptionKey": "settings.address.description",
+          "placeholderKey": "settings.address.placeholder"
+        },
+        {
+          "key": "caPem",
+          "type": "textarea",
+          "labelKey": "settings.caPem.label",
+          "descriptionKey": "settings.caPem.description"
+        },
+        {
+          "key": "kvMount",
+          "type": "string",
+          "labelKey": "settings.kvMount.label",
+          "descriptionKey": "settings.kvMount.description",
+          "default": "kv"
+        },
+        {
+          "key": "basePath",
+          "type": "string",
+          "labelKey": "settings.basePath.label",
+          "descriptionKey": "settings.basePath.description",
+          "default": "termix"
+        },
+        {
+          "key": "roleId",
+          "type": "string",
+          "labelKey": "settings.roleId.label",
+          "descriptionKey": "settings.roleId.description"
+        },
+        {
+          "key": "connection",
+          "type": "custom",
+          "component": "connection"
+        }
+      ]
+    },
+    "keybindingActions": [
+      {
+        "id": "openbao-secrets.typeSecret"
+      }
+    ],
+    "uses": [
+      "terminal.listSessions",
+      "terminal.sendToSession",
+      "terminal.sendToActive",
+      "terminal.toolbar",
+      "terminal.sidePanel"
+    ]
+  },
+  "locales": "locales",
+  "platforms": ["linux", "win32", "darwin"],
+  "desktop": "server"
+}

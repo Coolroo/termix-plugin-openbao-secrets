@@ -56,6 +56,10 @@ export class InputError extends Error {
 /** Most secrets one listing walks, so a huge area cannot stall a request. */
 export const MAX_LIST = 2000;
 
+/** The furthest ahead an expiresAt may be. */
+export const MAX_EXPIRY_DAYS = 30;
+const MAX_EXPIRY_MS = MAX_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
@@ -101,7 +105,9 @@ export function checkValue(value: unknown): string {
     throw new InputError("the value is empty");
   }
   if (value.length > MAX_VALUE_LENGTH) {
-    throw new InputError(`the value is longer than ${MAX_VALUE_LENGTH} characters`);
+    throw new InputError(
+      `the value is longer than ${MAX_VALUE_LENGTH} characters`,
+    );
   }
   return value;
 }
@@ -111,7 +117,8 @@ function checkOptions(
   now: number,
 ): { expiresAt: string | null; note: string | null } {
   const value = (options ?? {}) as PutOptions;
-  if (typeof value !== "object") throw new InputError("options must be an object");
+  if (typeof value !== "object")
+    throw new InputError("options must be an object");
   let expiresAt: string | null = null;
   if (value.expiresAt !== undefined && value.expiresAt !== null) {
     const at =
@@ -120,12 +127,19 @@ function checkOptions(
       throw new InputError("expiresAt must be an ISO time");
     }
     if (at <= now) throw new InputError("expiresAt is in the past");
+    if (at - now > MAX_EXPIRY_MS) {
+      throw new InputError(
+        `expiresAt is more than ${MAX_EXPIRY_DAYS} days ahead: the limit is ${MAX_EXPIRY_DAYS} days`,
+      );
+    }
     expiresAt = new Date(at).toISOString();
   }
   let note: string | null = null;
   if (value.note !== undefined && value.note !== null) {
     if (typeof value.note !== "string" || value.note.length > MAX_NOTE_LENGTH) {
-      throw new InputError(`a note is text of at most ${MAX_NOTE_LENGTH} characters`);
+      throw new InputError(
+        `a note is text of at most ${MAX_NOTE_LENGTH} characters`,
+      );
     }
     note = value.note.trim() || null;
   }
@@ -163,7 +177,11 @@ export function createSecrets(bao: OpenBao, clock: () => number = Date.now) {
   }
 
   /** Every name under a folder of the area, depth first, at most MAX_LIST. */
-  async function walk(base: string, folder: string, depth: number): Promise<string[]> {
+  async function walk(
+    base: string,
+    folder: string,
+    depth: number,
+  ): Promise<string[]> {
     const names: string[] = [];
     const keys = await bao.list(folder ? `${base}/${folder}` : base);
     for (const key of keys.sort()) {
@@ -302,7 +320,10 @@ export function createSecrets(bao: OpenBao, clock: () => number = Date.now) {
         for (const name of await walk(base, "", 0)) {
           const path = `${base}/${name}`;
           const meta = await bao.readMetadata(path);
-          if (meta && expired({ expiresAt: meta.custom.expiresAt ?? null }, now)) {
+          if (
+            meta &&
+            expired({ expiresAt: meta.custom.expiresAt ?? null }, now)
+          ) {
             await bao.destroy(path);
             removed.push(path.slice(config.basePath.length + 1));
           }

@@ -108,7 +108,7 @@ export function createPluginAreas(ctx: PluginContext, state: StateStore) {
         !KEY.test(value.key)
       ) {
         throw new AreaError(
-          'a plugin area is { plugin, key }: call bindPlugin(<your id>) for the key',
+          "a plugin area is { plugin, key }: call bindPlugin(<your id>) for the key",
           400,
         );
       }

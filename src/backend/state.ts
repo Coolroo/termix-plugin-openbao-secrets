@@ -39,8 +39,10 @@ export async function createStateStore(
 
   async function read(
     name: StateName,
-  ): Promise<Omit<StateRow, "value"> & { sealed: string } | null> {
-    const rows = await (await client())
+  ): Promise<(Omit<StateRow, "value"> & { sealed: string }) | null> {
+    const rows = await (
+      await client()
+    )
       .select()
       .from(table)
       .where(eq(table.name, name))
@@ -61,7 +63,9 @@ export async function createStateStore(
       name: StateName,
     ): Promise<{ updatedBy: string; updatedAt: string } | null> {
       const row = await read(name);
-      return row ? { updatedBy: row.updatedBy, updatedAt: row.updatedAt } : null;
+      return row
+        ? { updatedBy: row.updatedBy, updatedAt: row.updatedAt }
+        : null;
     },
 
     /** The unsealed value, or null when unset or no longer readable. */

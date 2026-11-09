@@ -1,4 +1,10 @@
-import { defineTable, id, text, timestamp, varchar } from "@termix-ssh/plugin-sdk/db";
+import {
+  defineTable,
+  id,
+  text,
+  timestamp,
+  varchar,
+} from "@termix-ssh/plugin-sdk/db";
 
 /*
  * Stored as p_openbao-secrets_<name>. One small table of named rows:

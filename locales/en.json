@@ -1,0 +1,129 @@
+{
+  "plugin": {
+    "name": "OpenBao Secrets",
+    "description": "Keep secrets in OpenBao or HashiCorp Vault, type them at a terminal's password prompt, and let other plugins store theirs."
+  },
+  "tab": {
+    "title": "Secrets"
+  },
+  "permissions": {
+    "use": {
+      "title": "Use secrets",
+      "description": "Keep your own secrets, read the shared ones, type them into terminals, and run other plugins' actions that use this plugin."
+    },
+    "manageShared": {
+      "title": "Manage shared secrets",
+      "description": "Add, replace and delete the shared secrets."
+    }
+  },
+  "settings": {
+    "address": {
+      "label": "OpenBao address",
+      "description": "The https address of OpenBao or Vault, with the port. http is refused.",
+      "placeholder": "https://bao.example.com:8200"
+    },
+    "caPem": {
+      "label": "CA certificate (PEM)",
+      "description": "Trust only this CA for OpenBao. Leave it empty to use the server's normal trust store, NODE_EXTRA_CA_CERTS included."
+    },
+    "kvMount": {
+      "label": "KV mount",
+      "description": "The KV version 2 secrets engine to use."
+    },
+    "basePath": {
+      "label": "Base path",
+      "description": "The folder in the KV mount that holds everything this plugin writes."
+    },
+    "roleId": {
+      "label": "AppRole role ID",
+      "description": "The role ID of the AppRole the plugin logs in with. It is not secret. The secret ID comes through Connect below."
+    }
+  },
+  "status": {
+    "notConnected": "OpenBao Secrets is not connected. Ask an admin to connect OpenBao Secrets.",
+    "adminHint": "Connect it in Settings, Plugins, OpenBao Secrets."
+  },
+  "errors": {
+    "load": "Could not load the secrets",
+    "save": "Could not save the secret",
+    "delete": "Could not delete the secret",
+    "connect": "Could not change the connection",
+    "test": "Could not test the connection"
+  },
+  "list": {
+    "search": "Search names and notes",
+    "add": "Add secret",
+    "yours": "Your secrets",
+    "shared": "Shared",
+    "you": "you",
+    "updated": "updated {{time}}",
+    "createdBy": "by {{who}}",
+    "expires": "expires {{time}}",
+    "emptyYours": "You have no secrets yet.",
+    "emptyShared": "There are no shared secrets.",
+    "replace": "Replace value",
+    "delete": "Delete"
+  },
+  "form": {
+    "addTitle": "Add secret",
+    "replaceTitle": "Replace the value of {{name}}",
+    "add": "Add",
+    "replace": "Replace",
+    "section": "Keep it in",
+    "name": "Name",
+    "namePlaceholder": "db/prod/root",
+    "nameHint": "Up to 4 parts joined by /. Each part is letters, digits, '.', '_' and '-'.",
+    "nameRule": "Use up to 4 parts of letters, digits, '.', '_' and '-', joined by /",
+    "value": "Value",
+    "valueHint": "The value is hidden as you type and is never shown again.",
+    "note": "Note (optional)",
+    "noteHint": "A short note, not secret, shown in the list.",
+    "noteRule": "A note is at most {{max}} characters",
+    "added": "Added {{name}}",
+    "replaced": "Replaced the value of {{name}}"
+  },
+  "delete": {
+    "title": "Delete {{name}}?",
+    "description": "Every version of this secret is deleted from OpenBao. This cannot be undone.",
+    "confirm": "Delete",
+    "done": "Deleted {{name}}"
+  },
+  "picker": {
+    "title": "Type a secret",
+    "caution": "The secret is typed at the cursor. Use it at a password prompt: at a normal prompt it shows on screen and in history.",
+    "into": "Into {{terminal}}",
+    "empty": "There are no secrets to type.",
+    "typed": "Typed {{name}}",
+    "noTerminal": "No open terminal took the secret",
+    "failed": "Could not read the secret",
+    "cancel": "Cancel",
+    "close": "Close"
+  },
+  "connection": {
+    "title": "Connection",
+    "description": "Connect with a response-wrapped AppRole secret ID. The secret ID is kept sealed on the server and never shown.",
+    "notRunning": "Turn the plugin on to connect it.",
+    "none": "Not connected.",
+    "since": "Connected since {{time}}, by {{who}}.",
+    "saveFirst": "Save the settings above first: {{problem}}",
+    "token": "Wrapping token",
+    "tokenPlaceholder": "Paste a wrapping token",
+    "tokenHint": "Make one with: vault write -wrap-ttl=10m -f auth/approle/role/<role>/secret-id (or bao write). It works once.",
+    "connect": "Connect",
+    "test": "Test connection",
+    "disconnect": "Disconnect",
+    "disconnectTitle": "Disconnect OpenBao?",
+    "disconnectDescription": "The stored secret ID is deleted. Nobody can read or type secrets until an admin connects again. The secrets stay in OpenBao.",
+    "connected": "Connected to OpenBao",
+    "loginFailed": "Connected, but the first login failed",
+    "stepOk": "OK, {{step}}: {{message}}",
+    "stepFailed": "Failed, {{step}}: {{message}}",
+    "steps": {
+      "settings": "Settings",
+      "login": "Login",
+      "write": "Write",
+      "read": "Read",
+      "delete": "Delete"
+    }
+  }
+}
