@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+### Fixed
+
+- Adding a secret when OpenBao accepts the value but refuses its metadata (for example a policy without create and update on the KV metadata path) no longer leaves the value behind with no expiry or creator. The new secret is taken back, and adding it again works once the policy is right.
+
 ## 1.0.0
 
 ### Added
