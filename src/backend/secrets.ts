@@ -249,7 +249,14 @@ export function createSecrets(bao: OpenBao, clock: () => number = Date.now) {
       };
       if (expiresAt) custom.expiresAt = expiresAt;
       if (note) custom.note = note;
-      await bao.writeMetadata(path, custom);
+      try {
+        await bao.writeMetadata(path, custom);
+      } catch (error) {
+        // A new secret without its metadata has no expiry and no creator,
+        // and a second add would call it taken: take the value back.
+        if (!existing) await bao.destroy(path).catch(() => undefined);
+        throw error;
+      }
       return (
         (await entryAt(path, name)) ?? {
           name,

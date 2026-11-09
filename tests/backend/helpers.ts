@@ -69,6 +69,8 @@ export class FakeBao {
   refuseRenew = false;
   /** Every KV call answers this status instead, when set. */
   failKv: number | null = null;
+  /** Every metadata write answers this status instead, when set. */
+  failMetadataWrite: number | null = null;
   private counter = 0;
 
   /** A wrapping token that unwraps once to `secretId`. */
@@ -208,6 +210,11 @@ export class FakeBao {
         });
       }
       if (method === "POST") {
+        if (this.failMetadataWrite !== null) {
+          return reply(this.failMetadataWrite, {
+            errors: ["permission denied"],
+          });
+        }
         const entry = this.kv.get(key);
         if (entry) entry.custom = { ...body.custom_metadata };
         return reply(204);

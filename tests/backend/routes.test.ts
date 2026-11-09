@@ -157,6 +157,23 @@ describe("add, replace and delete", () => {
     expect(auditText(server)).not.toContain("v2");
   });
 
+  it("takes a new value back when OpenBao refuses its metadata", async () => {
+    server = await connected();
+    server.bao.failMetadataWrite = 403;
+    const body = { section: "user", name: "api/key", value: VALUE };
+    const refused = await server.call("POST", "/secrets", body);
+    expect(refused.status).toBe(502);
+    expect(refused.body.error).toBe(
+      "Write metadata: OpenBao refused it (HTTP 403)",
+    );
+    expect(server.bao.paths()).toEqual([]);
+    server.bao.failMetadataWrite = null;
+    expect((await server.call("POST", "/secrets", body)).status).toBe(201);
+    expect(server.bao.kv.get("termix/users/alice/api/key")?.custom).toEqual({
+      createdBy: "alice",
+    });
+  });
+
   it("checks names, values and notes", async () => {
     server = await connected();
     for (const bad of [
