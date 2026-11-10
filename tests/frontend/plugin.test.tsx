@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   renderWithApp,
   type RenderedPluginApp,
@@ -241,6 +247,32 @@ describe("the Secrets tab", () => {
         value: "s3cret!",
       }),
     );
+  });
+
+  it("gives each row icon buttons named Replace value and Delete", async () => {
+    await setup();
+    rendered!.renderTab(TAB_ID, { isVisible: true });
+    await screen.findByText("wifi");
+    const row = document.querySelector('[data-secret$="/wifi"]') as HTMLElement;
+    const replace = within(row).getByRole("button", {
+      name: locales.list.replace,
+    });
+    const remove = within(row).getByRole("button", {
+      name: locales.list.delete,
+    });
+    for (const button of [replace, remove]) {
+      expect(button.textContent).toBe("");
+      expect(button.querySelector("svg")).toBeTruthy();
+      expect(button.getAttribute("title")).toBe(
+        button.getAttribute("aria-label"),
+      );
+    }
+    fireEvent.click(replace);
+    expect(
+      await screen.findByText(
+        locales.form.replaceTitle.replace("{{name}}", "wifi"),
+      ),
+    ).toBeTruthy();
   });
 });
 

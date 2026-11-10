@@ -19,6 +19,7 @@ import {
   PanelList,
   PanelSearch,
   PanelShell,
+  PluginIcon,
   SelectField,
   TextField,
   useConfirm,
@@ -305,14 +306,16 @@ export function createSecretsTab(app: TermixApp) {
                             })
                           }
                         >
-                          {t("list.replace")}
+                          {/* A row action is a square icon button: the
+                              label is its tooltip and accessible name. */}
+                          <PluginIcon name="RefreshCw" aria-hidden="true" />
                         </ListRowAction>
                         <ListRowAction
                           label={t("list.delete")}
                           tone="destructive"
                           onClick={() => void remove(key, entry)}
                         >
-                          {t("list.delete")}
+                          <PluginIcon name="Trash2" aria-hidden="true" />
                         </ListRowAction>
                       </>
                     ) : undefined

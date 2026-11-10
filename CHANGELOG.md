@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3
+
+### Fixed
+
+- The **Replace value** and **Delete** buttons on a secret's row are icons, as in Termix's own lists. They held words that spilled out of the buttons and over the row, most of all on a phone. Each icon keeps its name as a tooltip and for screen readers.
+
 ## 1.0.2
 
 ### Fixed

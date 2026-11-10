@@ -1,7 +1,7 @@
 {
   "id": "openbao-secrets",
   "name": "OpenBao Secrets",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Keep secrets in OpenBao or HashiCorp Vault, type them at a terminal's password prompt, and let other plugins store theirs.",
   "author": {
     "name": "Coolroo"
