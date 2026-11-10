@@ -174,7 +174,7 @@ describe("the Secrets tab", () => {
     expect(await screen.findByText(locales.status.notConnected)).toBeTruthy();
   });
 
-  it("adds a secret through the masked field, which shows only dots", async () => {
+  async function openAdd() {
     const fakes = await setup();
     rendered!.renderTab(TAB_ID, { isVisible: true });
     await screen.findByText("wifi");
@@ -184,20 +184,61 @@ describe("the Secrets tab", () => {
     );
     fireEvent.change(name, { target: { value: "api/token" } });
     const field = document.querySelector(
-      'textarea[data-masked="true"]',
+      'textarea[data-secret-value="true"]',
     ) as HTMLTextAreaElement;
+    const add = () =>
+      screen.getByText(locales.form.add).closest("button") as HTMLButtonElement;
+    return { fakes, field, add };
+  }
+
+  it("adds a secret through the value field, which shows the value", async () => {
+    const { fakes, field, add } = await openAdd();
     expect(field).toBeTruthy();
+    expect(add().disabled).toBe(true);
     fireEvent.change(field, { target: { value: "ab\ncd" } });
-    expect(field.value).toBe("••\n••");
-    expect(document.body.innerHTML).not.toContain("ab\ncd");
+    expect(field.value).toBe("ab\ncd");
     expect(field.getAttribute("spellcheck")).toBe("false");
     expect(field.getAttribute("autocomplete")).toBe("off");
-    fireEvent.click(screen.getByText(locales.form.add));
+    expect(add().disabled).toBe(false);
+    fireEvent.click(add());
     await waitFor(() =>
       expect(fakes.post).toHaveBeenCalledWith("/secrets", {
         section: "user",
         name: "api/token",
         value: "ab\ncd",
+      }),
+    );
+  });
+
+  it("takes a phone keyboard's word that is still being composed", async () => {
+    const { field, add } = await openAdd();
+    fireEvent.compositionStart(field);
+    fireEvent.change(field, { target: { value: "hello" } });
+    // No compositionend: Android keyboards may keep composing until blur.
+    expect(add().disabled).toBe(false);
+  });
+
+  it("hides and shows the value without changing it", async () => {
+    const { fakes, field, add } = await openAdd();
+    fireEvent.change(field, { target: { value: "s3cret" } });
+    const toggle = screen.getByText(locales.form.hide);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
+    // jsdom drops -webkit-text-security, so the dots are checked by the flag.
+    expect(field.getAttribute("data-hidden")).toBe("true");
+    expect(
+      screen.getByText(locales.form.show).getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.change(field, { target: { value: "s3cret!" } });
+    fireEvent.click(screen.getByText(locales.form.show));
+    expect(field.getAttribute("data-hidden")).toBe("false");
+    expect(field.value).toBe("s3cret!");
+    fireEvent.click(add());
+    await waitFor(() =>
+      expect(fakes.post).toHaveBeenCalledWith("/secrets", {
+        section: "user",
+        name: "api/token",
+        value: "s3cret!",
       }),
     );
   });

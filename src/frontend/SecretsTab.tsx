@@ -25,7 +25,7 @@ import {
 } from "@termix-ssh/plugin-sdk/ui";
 import { toast } from "sonner";
 import { isValidName, MAX_NOTE_LENGTH } from "../shared/names";
-import { MaskedTextarea } from "./MaskedTextarea";
+import { SecretValueField } from "./SecretValueField";
 import { SecretPicker } from "./Picker";
 import { SecretTree } from "./SecretTree";
 import { clearPick, onPickChange, pendingPick } from "./terminal";
@@ -174,7 +174,7 @@ function SecretForm({
           >
             {t("form.value")}
           </label>
-          <MaskedTextarea
+          <SecretValueField
             id="openbao-secrets-value"
             value={value}
             onChange={setValue}

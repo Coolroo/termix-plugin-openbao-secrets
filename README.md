@@ -23,7 +23,7 @@ Read the [docs](docs/index.md) to set it up and use it.
 - One connection to OpenBao or Vault, set up by an admin with an AppRole
 - The AppRole secret ID arrives in a response-wrapped token, is unwrapped once, and is kept sealed on the server
 - Your secrets and shared secrets, in folders by `/`, with search
-- A hidden value field that shows only dots, in every browser
+- A value field that works with every keyboard, phone keyboards included, and shows the value while you type, with a **Hide** button. Once saved, a value is never shown again
 - **Type a secret** from the terminal toolbar, a key binding or the command palette, with a caution every time
 - A service for other plugins, each in its own area, with expiry times up to 30 days
 - An hourly sweep deletes expired secrets

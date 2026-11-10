@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2
+
+### Fixed
+
+- **Add secret** and **Replace value** work with phone keyboards. An Android keyboard composes a whole word before it hands it over, and the old dots-only field missed those words, so **Add** stayed off. The value field is now a plain text field: typing, paste and autofill all set the value.
+
+### Changed
+
+- The value shows while you type, so you can check it before you save. A **Hide** button draws it as dots, and **Show** brings it back; neither changes the value. Once saved, a value is still never sent to the browser to be shown.
+
 ## 1.0.1
 
 ### Fixed
