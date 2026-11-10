@@ -26,6 +26,12 @@ import {
   type SecretEntry,
   type Secrets,
 } from "./secrets.js";
+import {
+  isValidVariableName,
+  MAX_VARIABLE_LENGTH,
+  MAX_VARIABLE_VALUE_BYTES,
+  variableValueProblem,
+} from "../shared/names.js";
 
 /** Core's permission for plugin settings; admins hold it. */
 export const ADMIN_PERMISSION = "admin.plugins.manage";
@@ -70,6 +76,32 @@ function body(req: Request): Record<string, unknown> {
 function section(value: unknown): Section {
   if (value === "user" || value === "shared") return value;
   throw new InputError('section is "user" or "shared"');
+}
+
+/** Why a value cannot go in a shell variable. Never the value itself. */
+const VALUE_PROBLEMS = {
+  multiline:
+    "this secret has more than one line, so it cannot go in a variable: type it at the cursor",
+  control:
+    "this secret has a control character, so it cannot go in a variable: type it at the cursor",
+  long: `this secret is longer than ${MAX_VARIABLE_VALUE_BYTES} bytes, more than one terminal line takes: type it at the cursor`,
+} as const;
+
+/**
+ * POST /type's mode: null to type at the cursor (the default), or the
+ * shell variable's name for "Put in a variable".
+ */
+function variableMode(input: Record<string, unknown>): string | null {
+  if (input.mode === undefined || input.mode === "cursor") return null;
+  if (input.mode !== "variable") {
+    throw new InputError('mode is "cursor" or "variable"');
+  }
+  if (!isValidVariableName(input.variable)) {
+    throw new InputError(
+      `a variable name is letters, digits and '_', not starting with a digit, at most ${MAX_VARIABLE_LENGTH} characters, and not one the shell uses`,
+    );
+  }
+  return input.variable;
 }
 
 /** What the tab may see of a secret: everything but the value. */
@@ -453,6 +485,13 @@ export function registerRoutes(
    *               hostId:
    *                 type: number
    *                 description: The terminal's host, for the audit line
+   *               mode:
+   *                 type: string
+   *                 enum: [cursor, variable]
+   *                 description: Typed at the cursor (the default), or put in a shell variable with read -rs
+   *               variable:
+   *                 type: string
+   *                 description: The shell variable's name, with mode variable, for the audit line
    *     responses:
    *       200:
    *         description: "{ value }"
@@ -460,6 +499,8 @@ export function registerRoutes(
    *         description: Use secrets is missing, or the call came with an API key
    *       404:
    *         description: No secret has this name
+   *       422:
+   *         description: With mode variable, the value has a line break or a control character, or is too long for one terminal line
    */
   router.post(
     "/type",
@@ -481,10 +522,12 @@ export function registerRoutes(
           : typeof input.hostId === "string" && /^\d{1,12}$/.test(input.hostId)
             ? Number(input.hostId)
             : null;
+      const variable = variableMode(input);
       await connected();
-      const details =
-        `typed a secret into a terminal` +
-        ` (session ${sessionId || "unknown"}, host ${hostId ?? "unknown"})`;
+      const terminal = `session ${sessionId || "unknown"}, host ${hostId ?? "unknown"}`;
+      const details = variable
+        ? `put a secret in a shell variable (mode variable, variable ${variable}, ${terminal})`
+        : `typed a secret into a terminal (${terminal})`;
       const value = await audited(
         req,
         "type",
@@ -495,6 +538,8 @@ export function registerRoutes(
           if (found === null) {
             throw new InputError("no secret has this name", 404);
           }
+          const problem = variable ? variableValueProblem(found) : null;
+          if (problem) throw new InputError(VALUE_PROBLEMS[problem], 422);
           return found;
         },
       );

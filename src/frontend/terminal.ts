@@ -5,7 +5,8 @@
  * - terminal.listSessions: the open sessions, each with the tab's id (the
  *   registry id), its host and whether it is visible and connected.
  * - terminal.sendToSession(id, text, { run: false }): types into one
- *   session without pressing Enter.
+ *   session without pressing Enter (a paste). With { run: true } it types
+ *   the text as keys and then Enter ("\r"), which "Put in a variable" uses.
  * - terminal.sendToActive(text, { run: false }): the same, into the session
  *   the user worked in last.
  *
@@ -123,6 +124,53 @@ export async function typeInto(
   } catch {
     return false;
   }
+}
+
+/**
+ * The command "Put in a variable" types, with a space first so a shell
+ * whose HISTCONTROL has ignorespace keeps it out of history. `read -s`
+ * takes the value without echo, and `-r` and `IFS=` keep it as it is.
+ */
+export function readCommand(variable: string): string {
+  return ` IFS= read -rs ${variable}`;
+}
+
+/** How long `read` gets to start (and turn echo off) before the value. */
+export const READ_START_MS = 300;
+
+const pause = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * "Put in a variable": types ` IFS= read -rs NAME` and Enter, waits for
+ * `read` to start, then types the value and Enter. Both go with run: true,
+ * which types the text as keys and presses Enter (run: false pastes, and a
+ * pasted Enter does not end the line at a bash prompt). The value is input
+ * to `read`, not a command: it is not echoed and not kept in history. True
+ * when the terminal took both.
+ */
+export async function putInVariable(
+  invoke: InvokeAction,
+  target: PickTarget,
+  variable: string,
+  value: string,
+  wait: (ms: number) => Promise<void> = pause,
+): Promise<boolean> {
+  const send = async (text: string) => {
+    try {
+      const sent = target.sessionId
+        ? await invoke("terminal.sendToSession", target.sessionId, text, {
+            run: true,
+          })
+        : await invoke("terminal.sendToActive", text, { run: true });
+      return sent === true;
+    } catch {
+      return false;
+    }
+  };
+  if (!(await send(readCommand(variable)))) return false;
+  await wait(READ_START_MS);
+  return send(value);
 }
 
 /**

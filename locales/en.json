@@ -99,7 +99,18 @@
     "noTerminal": "No open terminal took the secret",
     "failed": "Could not read the secret",
     "cancel": "Cancel",
-    "close": "Close"
+    "close": "Close",
+    "back": "Back",
+    "typeAtCursor": "Type at the cursor",
+    "putInVariable": "Put in a variable",
+    "variableCaution": "Use this only at a bash or zsh prompt, not inside another program: it types a command. The value goes into the variable without showing on screen or going into history.",
+    "variableName": "Variable name",
+    "variableHint": "Letters, digits and _, not starting with a digit.",
+    "variableRule": "Use letters, digits and _, not starting with a digit, at most {{max}} characters",
+    "variableShell": "The shell uses {{variable}} itself: pick another name",
+    "variableUnfit": "This secret has more than one line or a control character, or is too long, so it cannot go in a variable: type it at the cursor",
+    "putButton": "Put in the variable",
+    "put": "Put {{name}} in ${{variable}}. Use \"${{variable}}\" in commands, and run unset {{variable}} when done."
   },
   "connection": {
     "title": "Connection",
