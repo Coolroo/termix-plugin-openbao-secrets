@@ -37,6 +37,14 @@ From the toolbar or the panel beside a terminal: that terminal. From a key bindi
 
 No. It is typed at the cursor, and you press Enter.
 
+## How do I use a secret in a command without showing it?
+
+Pick the secret, then **Put in a variable**, at a bash or zsh prompt. Then use `"$NAME"` in your commands, and run `unset NAME` when done. [Put a secret in a variable](index.md#put-a-secret-in-a-variable) says how it works.
+
+## Put in a variable says the secret cannot go in a variable
+
+The value has more than one line (a key file, say), a control character, or more than 4000 bytes. `read` takes one line, so it would stop early. Type it at the cursor instead, at a prompt that takes it.
+
 ## Can I type a secret into a remote desktop?
 
 No. Only SSH Terminal sessions.

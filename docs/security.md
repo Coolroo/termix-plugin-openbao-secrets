@@ -35,6 +35,7 @@ Every request goes through `ctx.fetch`, Termix's guarded outbound HTTP:
 - **The Secrets tab** gets names, times, who made them and notes. It never gets a value: there is no reveal and no copy.
 - **Add secret** and **Replace value** send the value from the browser to the plugin and on to OpenBao. The value field draws a dot for each character itself, so the value is never in the page as text, in every browser. Spell check, autocomplete, password managers, undo and dragging are off for it.
 - **Type a secret** asks `POST /plugin-api/openbao-secrets/type` for one value. The answer has `Cache-Control: no-store`, is refused for Termix API keys, and is audited with who, which secret, the terminal session and the host. The browser types the value into the terminal with the SSH Terminal plugin's `terminal.sendToSession` (or `terminal.sendToActive`) with `run: false`, and drops it. It is never rendered, logged or stored in the browser.
+- **Put in a variable** asks the same route, with `mode: "variable"` and the variable's name, which the server checks again. The server refuses a value with a line break or a control character, or longer than 4000 bytes, so a value can never end `read` early and run the rest as a command. The browser sends ` IFS= read -rs NAME`, then the value, each with `run: true` (typed as keys, then Enter), and drops it. The audit line says `mode variable` and the variable's name, never the value.
 - **The service** hands values to the calling plugin, as the acting user, after core checked **Use secrets**.
 
 ## Permissions
@@ -67,4 +68,5 @@ The plugin asks for nothing else: it reads no hosts, opens no SSH connection and
 - All plugins run in one Node process. The plugin area key stops honest mistakes and API misuse by other plugins, not a malicious plugin that reads memory.
 - Anyone with **Use secrets** who acts through a consumer plugin reaches that plugin's area. The consumer decides who sees what in it.
 - A typed secret is visible on screen if it is typed at a normal prompt instead of a password prompt, and then lands in shell history. The picker says so every time.
+- **Put in a variable** types a command. Inside another program (an editor, a database shell, a remote desktop) that command and the value go to that program instead, and may show. The picker says to use it only at a bash or zsh prompt, every time. The variable stays in that shell until `unset`, and child processes see it only when it is exported.
 - While an input method (IME) composes text in the value field, the characters being composed show until they are committed.

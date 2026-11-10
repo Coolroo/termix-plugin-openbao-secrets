@@ -1,7 +1,7 @@
 {
   "id": "openbao-secrets",
   "name": "OpenBao Secrets",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Keep secrets in OpenBao or HashiCorp Vault, type them at a terminal's password prompt, and let other plugins store theirs.",
   "author": {
     "name": "Coolroo"
@@ -17,6 +17,7 @@
     "A Secrets tab for your own secrets and shared ones, by name, in folders",
     "A saved value is never sent to the browser for display: no reveal, no copy",
     "Type a secret at the cursor of an open terminal, for a password prompt",
+    "Put a secret in a shell variable, without showing it or saving it in history",
     "A service other plugins use to store, read and delete secrets in their own area",
     "Secrets with an expiry time are deleted when it passes",
     "Every read, write and delete is in the audit log, never with the value"

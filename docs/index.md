@@ -74,11 +74,36 @@ In a terminal, press **Type a secret** in the toolbar. The picker opens beside t
 
 > The secret is typed at the cursor. Use it at a password prompt: at a normal prompt it shows on screen and in history.
 
-Pick a secret. It is typed where the cursor is, without Enter. Press Enter yourself.
+Pick a secret, then pick what to do with it:
+
+- **Type at the cursor**: the value is typed where the cursor is, without Enter. Press Enter yourself.
+- **Put in a variable**: the value goes into a shell variable, for commands that take a secret as an argument or in the environment.
 
 You can also bind a key to **Type a secret** in Appearance, Keybindings, or run it from the command palette. Both open the Secrets tab on the picker, and go back to your terminal after the pick.
 
-Each pick is in the audit log: who, which secret, which session and host. The value is not.
+Each pick is in the audit log: who, which secret, which session and host, and for a variable the mode `variable` and the variable's name. The value is not.
+
+### Put a secret in a variable
+
+**Put in a variable** asks for a variable name: letters, digits and `_`, not starting with a digit. The default comes from the secret's name, so `runbook-test` gives `RUNBOOK_TEST`. Names the shell uses itself, like `PATH` or `IFS`, are refused. A caution shows every time:
+
+> Use this only at a bash or zsh prompt, not inside another program: it types a command.
+
+The plugin then types, in the terminal:
+
+1. ` IFS= read -rs RUNBOOK_TEST`, with a space first, and Enter.
+2. The value, and Enter.
+
+`read -s` takes the value without showing it. The value is input to `read`, not a command, so it never goes into shell history. The space first keeps the `read` line out of history where `HISTCONTROL` has `ignorespace` (Debian and Ubuntu set `ignoreboth`); the line holds no secret either way.
+
+Use the variable in quotes, and remove it when you are done:
+
+```bash
+curl -H "Authorization: Bearer $RUNBOOK_TEST" https://api.example.com/
+unset RUNBOOK_TEST
+```
+
+A secret with more than one line, a control character, or more than 4000 bytes cannot go in a variable this way: one line of `read` does not hold it. The picker says so and types nothing. Type it at the cursor instead.
 
 ## Expiry
 
