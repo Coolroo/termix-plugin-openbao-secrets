@@ -305,4 +305,105 @@ describe("typing into a terminal", () => {
         "typed a secret into a terminal (session tabscript, host unknown)",
     });
   });
+
+  it("puts a value in a variable, and audits the mode and the name, never the value", async () => {
+    server = await connected();
+    await server.call("POST", "/secrets", {
+      section: "user",
+      name: "runbook-test",
+      value: VALUE,
+    });
+    const typed = await server.call("POST", "/type", {
+      section: "user",
+      name: "runbook-test",
+      sessionId: "tab-7",
+      hostId: 3,
+      mode: "variable",
+      variable: "RUNBOOK_TEST",
+    });
+    expect(typed.status).toBe(200);
+    expect(typed.body).toEqual({ value: VALUE });
+    expect(typed.headers["cache-control"]).toBe("no-store");
+    expect(server.mock.audits.at(-1)).toMatchObject({
+      action: "openbao_secrets_type",
+      success: true,
+      resourceName: "user/runbook-test",
+      details:
+        "put a secret in a shell variable (mode variable, variable RUNBOOK_TEST, session tab-7, host 3)",
+    });
+    expect(auditText(server)).not.toContain(VALUE);
+  });
+
+  it("keeps the cursor mode's line when the mode is cursor", async () => {
+    server = await connected();
+    await server.call("POST", "/secrets", {
+      section: "user",
+      name: "root",
+      value: VALUE,
+    });
+    const typed = await server.call("POST", "/type", {
+      section: "user",
+      name: "root",
+      mode: "cursor",
+    });
+    expect(typed.status).toBe(200);
+    expect(server.mock.audits.at(-1)?.details).toBe(
+      "typed a secret into a terminal (session unknown, host unknown)",
+    );
+  });
+
+  it("refuses a bad mode or variable name before it reads anything", async () => {
+    server = await connected();
+    await server.call("POST", "/secrets", {
+      section: "user",
+      name: "root",
+      value: VALUE,
+    });
+    const before = server.mock.audits.length;
+    for (const input of [
+      { mode: "paste" },
+      { mode: "variable" },
+      { mode: "variable", variable: "1ROOT" },
+      { mode: "variable", variable: "ROOT;id" },
+      { mode: "variable", variable: "PATH" },
+    ]) {
+      const typed = await server.call("POST", "/type", {
+        section: "user",
+        name: "root",
+        ...input,
+      });
+      expect(typed.status).toBe(400);
+      expect(JSON.stringify(typed.body)).not.toContain(VALUE);
+    }
+    expect(server.mock.audits.length).toBe(before);
+  });
+
+  it("refuses a value one read line cannot hold, without the value", async () => {
+    server = await connected();
+    const multiline = "line one\nrm -rf ~";
+    await server.call("POST", "/secrets", {
+      section: "user",
+      name: "key",
+      value: multiline,
+    });
+    const typed = await server.call("POST", "/type", {
+      section: "user",
+      name: "key",
+      mode: "variable",
+      variable: "KEY",
+    });
+    expect(typed.status).toBe(422);
+    expect(JSON.stringify(typed.body)).not.toContain("rm -rf");
+    expect(server.mock.audits.at(-1)).toMatchObject({
+      action: "openbao_secrets_type",
+      success: false,
+    });
+    expect(auditText(server)).not.toContain("rm -rf");
+    // Typed at the cursor, the same secret is still given.
+    const atCursor = await server.call("POST", "/type", {
+      section: "user",
+      name: "key",
+    });
+    expect(atCursor.status).toBe(200);
+  });
 });

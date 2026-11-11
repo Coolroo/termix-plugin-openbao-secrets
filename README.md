@@ -25,7 +25,9 @@ Read the [docs](docs/index.md) to set it up and use it.
 - Your secrets and shared secrets, in folders by `/`, with search
 - A value field that works with every keyboard, phone keyboards included, and shows the value while you type, with a **Hide** button. Once saved, a value is never shown again
 - **Type a secret** from the terminal toolbar, a key binding or the command palette, with a caution every time
+- **Put in a variable**: puts a secret in a shell variable with `read -s`, so it does not show on screen or go into shell history
 - A service for other plugins, each in its own area, with expiry times up to 30 days
+- **App secrets**, off by default: other plugins may create a new field at app paths an admin allows, never reading or replacing one
 - An hourly sweep deletes expired secrets
 - Every read, write and delete in the audit log, never with the value
 

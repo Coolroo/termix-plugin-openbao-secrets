@@ -1,5 +1,5 @@
 /**
- * The service openbao-secrets.store 1.0.0, for other plugins
+ * The service openbao-secrets.store 1.1.0, for other plugins
  * (docs/service.md).
  *
  * Core checks the "openbao-secrets.use" permission for the acting user
@@ -13,11 +13,20 @@
  */
 
 import type { PluginContext } from "@termix-ssh/plugin-sdk/backend";
+import {
+  checkAppPart,
+  checkField,
+  createAppField,
+  type CreatedAppField,
+} from "./apps.js";
+import { readAppsConfig } from "./config.js";
 import type { Connection } from "./connection.js";
+import type { OpenBao } from "./openbao.js";
 import { AreaError, type PluginAreas } from "./plugin-areas.js";
 import {
   checkName,
   checkPrefix,
+  checkValue,
   InputError,
   type AreaRef,
   type PutOptions,
@@ -42,6 +51,13 @@ export interface SecretsStore {
   remove(area: Area, name: string): Promise<boolean>;
   list(area: Area, prefix?: string): Promise<ServiceEntry[]>;
   removePrefix(area: Area, prefix: string): Promise<number>;
+  createAppField(
+    caller: { plugin: string; key: string },
+    app: string,
+    host: string,
+    field: string,
+    value: string,
+  ): Promise<CreatedAppField>;
 }
 
 export type ServiceEntry = Pick<
@@ -54,6 +70,7 @@ export function createSecretsStore(
   secrets: Secrets,
   areas: PluginAreas,
   connection: Connection,
+  bao: OpenBao,
 ): SecretsStore {
   function actor(): string {
     const userId = ctx.currentActor();
@@ -62,12 +79,18 @@ export function createSecretsStore(
     return userId;
   }
 
-  async function need(permission: "use" | "manage-shared"): Promise<void> {
+  const PERMISSION_NAMES = {
+    use: "Use secrets",
+    "manage-shared": "Manage shared secrets",
+    "create-app-secrets": "Create app secrets",
+  } as const;
+
+  async function need(
+    permission: keyof typeof PERMISSION_NAMES,
+  ): Promise<void> {
     if (!(await ctx.rbac.has(permission))) {
       throw new AreaError(
-        permission === "use"
-          ? "you need the Use secrets permission"
-          : "you need the Manage shared secrets permission",
+        `you need the ${PERMISSION_NAMES[permission]} permission`,
       );
     }
   }
@@ -108,6 +131,7 @@ export function createSecretsStore(
     method: string,
     target: () => string,
     fn: () => Promise<T>,
+    details: () => string = () => `openbao-secrets.store ${method}`,
   ): Promise<T> {
     try {
       const result = await fn();
@@ -115,7 +139,7 @@ export function createSecretsStore(
         action: `openbao_secrets_service_${method}`,
         resourceType: "openbao_secret",
         resourceName: target().slice(0, 250),
-        details: `openbao-secrets.store ${method}`,
+        details: details().slice(0, 500),
         success: true,
       });
       return result;
@@ -124,7 +148,7 @@ export function createSecretsStore(
         action: `openbao_secrets_service_${method}`,
         resourceType: "openbao_secret",
         resourceName: target().slice(0, 250),
-        details: `openbao-secrets.store ${method}`,
+        details: details().slice(0, 500),
         success: false,
         errorMessage: error instanceof Error ? error.message : "failed",
       });
@@ -140,6 +164,11 @@ export function createSecretsStore(
         : "unknown";
   const target = (area: unknown, name: unknown) =>
     `${label(area)}/${typeof name === "string" ? name.slice(0, 200) : ""}`;
+  /** An argument as audit text: plain characters only, short. */
+  const part = (value: unknown, max: number) =>
+    typeof value === "string"
+      ? value.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, max)
+      : "";
 
   return {
     async status() {
@@ -224,6 +253,42 @@ export function createSecretsStore(
           }
           return secrets.removePrefix(ref, checkPrefix(prefix));
         },
+      );
+    },
+
+    async createAppField(caller, app, host, field, value) {
+      // Who and where, for the audit line; never the value.
+      let pluginId: string | null = null;
+      let path: string | null = null;
+      return audited(
+        "createAppField",
+        () => `app:${part(app, 64)}/${part(host, 64)}#${part(field, 128)}`,
+        async () => {
+          if (!caller || typeof caller !== "object") {
+            throw new AreaError(
+              "createAppField is for plugins bound to the store: pass { plugin, key } from bindPlugin (docs/service.md)",
+              400,
+            );
+          }
+          // Core already checks "use" before every service call; checked
+          // here too so the rule holds whoever calls this object.
+          await need("use");
+          pluginId = await areas.verify(caller);
+          await need("create-app-secrets");
+          const result = await createAppField(
+            { bao, apps: () => readAppsConfig(ctx) },
+            checkAppPart("app", app),
+            checkAppPart("host", host),
+            checkField(field),
+            checkValue(value),
+          );
+          path = result.path;
+          return result;
+        },
+        () =>
+          `openbao-secrets.store createAppField by user ${part(ctx.currentActor() ?? "", 64) || "none"}` +
+          ` through plugin ${pluginId ?? `${part((caller as { plugin?: unknown } | null)?.plugin, 40)} (not verified)`}` +
+          (path ? ` at ${path}` : ""),
       );
     },
   };

@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.5
+
+### Added
+
+- **App secrets**, off by default. The service `openbao-secrets.store` is now version 1.1.0, with `createAppField(caller, app, host, field, value)`: a plugin bound to the store adds one new field at `<app secrets folder>/<app>/<host>`, for another program that reads its secrets there. It never reads a value and never replaces a field: it reads the secret's field names (KV `subkeys`), refuses a field that exists, and writes with check-and-set (0 for a new secret, the checked version for a new field by JSON merge patch), trying once more after a lost race. A secret whose newest version is deleted or destroyed is refused.
+- Admin settings **App secrets folder** (a folder in the KV mount, outside the base path) and **Allowed app paths** (one `<app>/<host>` per line). Both are empty by default, and the feature is off until both are set.
+- The permission **Create app secrets** (`openbao-secrets.create-app-secrets`), for admins by default. Callers need it as well as **Use secrets**.
+- An audit line for every try: the user, the calling plugin, the path and the field, never the value.
+- Docs: the OpenBao policy lines for it (`create` and `patch` on data, `read` on `subkeys` and `metadata`), and what that policy cannot stop (a `patch` can replace a field; the plugin refuses to, the policy alone does not).
+
+## 1.0.4
+
+### Added
+
+- **Put in a variable** in the secret picker, beside **Type at the cursor**. It asks for a variable name (letters, digits and `_`, not starting with a digit; the default comes from the secret's name, so `runbook-test` gives `RUNBOOK_TEST`). Then it types ` IFS= read -rs NAME` with a space first, Enter, the value and Enter. `read -s` takes the value without showing it, and the value is input, not a command, so it never goes into history; the space first keeps the `read` line out of history where `HISTCONTROL` has `ignorespace`. Use `"$NAME"` in commands, and run `unset NAME` when done. A caution shows every time: use it only at a bash or zsh prompt. The audit line names the secret, the terminal session and host, the mode `variable` and the variable, never the value.
+- A secret with more than one line, a control character, or more than 4000 bytes cannot go in a variable: one line of `read` would not hold it. The picker says so and types nothing.
+
+### Changed
+
+- Picking a secret now asks what to do with it: **Type at the cursor** (as before) or **Put in a variable**.
+
 ## 1.0.3
 
 ### Fixed

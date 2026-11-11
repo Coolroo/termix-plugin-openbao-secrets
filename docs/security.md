@@ -35,20 +35,35 @@ Every request goes through `ctx.fetch`, Termix's guarded outbound HTTP:
 - **The Secrets tab** gets names, times, who made them and notes. It never gets a value: there is no reveal and no copy.
 - **Add secret** and **Replace value** send the value from the browser to the plugin and on to OpenBao. The value field draws a dot for each character itself, so the value is never in the page as text, in every browser. Spell check, autocomplete, password managers, undo and dragging are off for it.
 - **Type a secret** asks `POST /plugin-api/openbao-secrets/type` for one value. The answer has `Cache-Control: no-store`, is refused for Termix API keys, and is audited with who, which secret, the terminal session and the host. The browser types the value into the terminal with the SSH Terminal plugin's `terminal.sendToSession` (or `terminal.sendToActive`) with `run: false`, and drops it. It is never rendered, logged or stored in the browser.
+- **Put in a variable** asks the same route, with `mode: "variable"` and the variable's name, which the server checks again. The server refuses a value with a line break or a control character, or longer than 4000 bytes, so a value can never end `read` early and run the rest as a command. The browser sends ` IFS= read -rs NAME`, then the value, each with `run: true` (typed as keys, then Enter), and drops it. The audit line says `mode variable` and the variable's name, never the value.
 - **The service** hands values to the calling plugin, as the acting user, after core checked **Use secrets**.
+- **App secrets** (`createAppField`, off by default) send a value from the calling plugin to OpenBao, at an allowed `<app>/<host>`. Nothing reads it back: the plugin reads only field names and versions there.
 
 ## Permissions
 
-| Permission                                              | Lets a person                                                      | Default |
-| ------------------------------------------------------- | ------------------------------------------------------------------ | ------- |
-| Use secrets (`openbao-secrets.use`)                     | keep their own secrets, read and type shared ones, use the service | admin   |
-| Manage shared secrets (`openbao-secrets.manage-shared`) | add, replace and delete shared secrets                             | admin   |
+| Permission                                                | Lets a person                                                      | Default |
+| --------------------------------------------------------- | ------------------------------------------------------------------ | ------- |
+| Use secrets (`openbao-secrets.use`)                       | keep their own secrets, read and type shared ones, use the service | admin   |
+| Manage shared secrets (`openbao-secrets.manage-shared`)   | add, replace and delete shared secrets                             | admin   |
+| Create app secrets (`openbao-secrets.create-app-secrets`) | let plugins add new fields at the allowed app paths                | admin   |
 
 Every route checks permissions on the server. The user always comes from the session (`ctx.currentActor()`), never from a request body or a service argument.
 
 ## Audit
 
 Every add, replace, delete, type, connect and disconnect is an audit line `openbao_secrets_<action>`, and every service call is `openbao_secrets_service_<method>`, with the area and the name and whether it worked. No line holds a value.
+
+## App secrets
+
+The feature is off until an admin sets the **App secrets folder** and **Allowed app paths**. Then a bound plugin, acting for a user with **Use secrets** and **Create app secrets**, can add a field at an allowed `<app>/<host>`. The plugin refuses a field that exists, and its check-and-set write cannot replace one it did not see.
+
+The OpenBao policy for it (`create` and `patch` on the data path, `read` on `subkeys` and `metadata`) never lets the plugin read, list or delete a value there. It cannot do everything, though:
+
+- **A patch can replace or remove a field.** OpenBao has no capability for "add a field only": `patch` is a JSON merge patch, so it can also overwrite a field or remove one with `null`. The plugin never sends such a patch, but the policy alone does not stop one. If Termix's server or another plugin in its process were taken over, it could replace a value at an allowed path; it still could not read one. A replaced value stays in the secret's version history (`max_versions`, 10 by default), where an OpenBao admin can see and restore it; enough patches in a row push it out.
+- **Parameter rules do not help.** `required_parameters`, `allowed_parameters` and `denied_parameters` see only the top-level request fields (`data`, `options`), not the fields inside `data` or the check-and-set number, and OpenBao's docs call them not supported for KV version 2.
+- **Stricter, with less:** leave `patch` out of the policy. Then the plugin can only create a secret that does not exist yet (OpenBao asks for `update` to write an existing one), and adding a field to an existing secret fails with "OpenBao refused it (HTTP 403)".
+
+Field names are visible to the plugin through `subkeys`. Keep secrets out of field names.
 
 ## Capabilities
 
@@ -67,4 +82,5 @@ The plugin asks for nothing else: it reads no hosts, opens no SSH connection and
 - All plugins run in one Node process. The plugin area key stops honest mistakes and API misuse by other plugins, not a malicious plugin that reads memory.
 - Anyone with **Use secrets** who acts through a consumer plugin reaches that plugin's area. The consumer decides who sees what in it.
 - A typed secret is visible on screen if it is typed at a normal prompt instead of a password prompt, and then lands in shell history. The picker says so every time.
+- **Put in a variable** types a command. Inside another program (an editor, a database shell, a remote desktop) that command and the value go to that program instead, and may show. The picker says to use it only at a bash or zsh prompt, every time. The variable stays in that shell until `unset`, and child processes see it only when it is exported.
 - While an input method (IME) composes text in the value field, the characters being composed show until they are committed.

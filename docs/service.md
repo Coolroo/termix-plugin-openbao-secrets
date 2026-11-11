@@ -5,11 +5,11 @@ order: 1
 
 # Service for other plugins
 
-OpenBao Secrets provides the service `openbao-secrets.store`, version 1.0.0. Another plugin uses it to keep secrets in OpenBao without a connection of its own: Runbooks keeps the values a runbook asks for, for example.
+OpenBao Secrets provides the service `openbao-secrets.store`, version 1.1.0. Another plugin uses it to keep secrets in OpenBao without a connection of its own: Runbooks keeps the values a runbook asks for, for example.
 
 ## Use it
 
-Declare it in your manifest. Mark it optional, so your plugin works without it:
+Declare it in your manifest. Mark it optional, so your plugin works without it. Ask for `^1.1.0` if you call `createAppField`:
 
 ```json
 "requires": [
@@ -32,15 +32,16 @@ Core runs every call as the acting user and checks first that the user holds **U
 
 All methods are async. A value travels only in an argument or a result: never in an error, a log line or an audit line.
 
-| Method                             | Answers                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------- |
-| `status()`                         | `{ connected, backend: "openbao-kv2" }`                                   |
-| `bindPlugin(pluginId)`             | nothing; hands your area key to your receiver (below)                     |
-| `put(area, name, value, options?)` | nothing; `options` is `{ expiresAt?, note? }`                             |
-| `get(area, name)`                  | the value, or `null` when there is none or it has expired                 |
-| `remove(area, name)`               | `true` when there was a secret                                            |
-| `list(area, prefix?)`              | `[{ name, createdAt, updatedAt, createdBy, expiresAt, note }]`, no values |
-| `removePrefix(area, prefix)`       | how many secrets were deleted; `""` empties the area                      |
+| Method                                            | Answers                                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `status()`                                        | `{ connected, backend: "openbao-kv2" }`                                      |
+| `bindPlugin(pluginId)`                            | nothing; hands your area key to your receiver (below)                        |
+| `put(area, name, value, options?)`                | nothing; `options` is `{ expiresAt?, note? }`                                |
+| `get(area, name)`                                 | the value, or `null` when there is none or it has expired                    |
+| `remove(area, name)`                              | `true` when there was a secret                                               |
+| `list(area, prefix?)`                             | `[{ name, createdAt, updatedAt, createdBy, expiresAt, note }]`, no values    |
+| `removePrefix(area, prefix)`                      | how many secrets were deleted; `""` empties the area                         |
+| `createAppField(caller, app, host, field, value)` | `{ path, field, created, version }`; see [App secrets](#app-secrets) (1.1.0) |
 
 - A name is 1 to 4 parts joined by `/`, each part letters, digits, `.`, `_` and `-`, at most 200 characters. A prefix is a name, with or without a trailing `/`.
 - `put` replaces the value and the options. `createdBy` stays the user who first stored it.
@@ -67,6 +68,37 @@ Core does not tell a provider which plugin is calling, so OpenBao Secrets cannot
 3. Pass `{ plugin: "<your plugin id>", key }` as the area. The key stays the same across restarts.
 
 Anyone may call your receiver, so take a key only while your own `bindPlugin` call is in flight.
+
+## App secrets
+
+`createAppField(caller, app, host, field, value)` adds one new field at `<app secrets folder>/<app>/<host>`, for another program that reads its secrets there ([setup](index.md#app-secrets-optional)). It creates only: it never reads a value, and it refuses a field that exists already.
+
+- `caller` is your plugin area, `{ plugin, key }` from `bindPlugin`. The call is only for plugins bound to the store: `"user"`, `"shared"` or a wrong key is refused.
+- The acting user needs **Use secrets** and **Create app secrets** (`openbao-secrets.create-app-secrets`).
+- `app` and `host` are 1 to 64 letters, digits, `.`, `_` and `-`, and `<app>/<host>` must be in the admin's **Allowed app paths**. `field` is 1 to 128 of the same characters. `value` is a non-empty string of at most 64 KiB.
+- It answers `{ path, field, created, version }`: `path` with the KV mount (`kv/apps/my-app/web-1`), `created` is `"secret"` for a new secret and `"field"` for a field added to one, and `version` is the secret's version after the write.
+
+It refuses with an error, and writes nothing, when:
+
+| Why                                        | Message starts with                     |
+| ------------------------------------------ | --------------------------------------- |
+| An admin has not set both settings         | `creating app secrets is off`           |
+| `<app>/<host>` is not in the list          | `<app>/<host> is not in the allowed`    |
+| The field is there already                 | `the field <field> exists already`      |
+| The newest version is deleted or destroyed | `<app>/<host> exists, but its newest`   |
+| Another write won the race twice           | `<app>/<host> changed while the field`  |
+| OpenBao refuses (the policy lacks a line)  | `Create: OpenBao refused it (HTTP 403)` |
+
+```ts
+const made = await store.createAppField(
+  area,
+  "my-app",
+  "web-1",
+  "token",
+  value,
+);
+// { path: "kv/apps/my-app/web-1", field: "token", created: "secret", version: 1 }
+```
 
 ## Example
 
@@ -122,6 +154,18 @@ interface SecretsStore {
     }>
   >;
   removePrefix(area: Area, prefix: string): Promise<number>;
+  createAppField(
+    caller: { plugin: string; key: string },
+    app: string,
+    host: string,
+    field: string,
+    value: string,
+  ): Promise<{
+    path: string;
+    field: string;
+    created: "secret" | "field";
+    version: number;
+  }>;
 }
 ```
 
@@ -131,4 +175,4 @@ Errors are plain `Error`s with a short message: a bad name, a missing permission
 
 ## Audit
 
-Core writes `plugin_service_openbao-secrets_store_<method>` for every call, naming your plugin. OpenBao Secrets adds `openbao_secrets_service_<method>` with the area and the name, and whether the call worked.
+Core writes `plugin_service_openbao-secrets_store_<method>` for every call, naming your plugin. OpenBao Secrets adds `openbao_secrets_service_<method>` with the area and the name, and whether the call worked. For `createAppField` the line names `app:<app>/<host>#<field>`, and its details say which user, through which plugin, and the full path.

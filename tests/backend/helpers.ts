@@ -21,8 +21,12 @@ export const SECRET_ID = "secret-id-1";
 
 export const USE = "openbao-secrets.use";
 export const MANAGE_SHARED = "openbao-secrets.manage-shared";
+export const CREATE_APP_SECRETS = "openbao-secrets.create-app-secrets";
 export const ADMIN = "admin.plugins.manage";
-export const ALL_PERMISSIONS = [USE, MANAGE_SHARED, ADMIN];
+export const ALL_PERMISSIONS = [USE, MANAGE_SHARED, CREATE_APP_SECRETS, ADMIN];
+
+/** The app secrets folder the fake OpenBao guards like a create-only policy. */
+export const APPS_FOLDER = "apps";
 
 interface KvEntry {
   value: string;
@@ -30,6 +34,15 @@ interface KvEntry {
   created: string;
   updated: string;
   custom: Record<string, string>;
+}
+
+/** One app secret: its versions, oldest first (version n is index n - 1). */
+export interface AppKvEntry {
+  versions: Array<{
+    data: Record<string, string>;
+    deleted: boolean;
+    destroyed: boolean;
+  }>;
 }
 
 interface Token {
@@ -72,6 +85,111 @@ export class FakeBao {
   /** Every metadata write answers this status instead, when set. */
   failMetadataWrite: number | null = null;
   private counter = 0;
+  /**
+   * Secrets under APPS_FOLDER. Answered as a create-only policy would:
+   * data create (no secret yet) and patch, subkeys and metadata read; no
+   * data read, update or delete, no list.
+   */
+  readonly apps = new Map<string, AppKvEntry>();
+  /** Runs before each app data write, to stand in for another writer. */
+  beforeAppWrite: ((method: string, key: string) => void) | null = null;
+
+  /** Stores an app secret's next version, as another writer would. */
+  writeApp(key: string, data: Record<string, string>): void {
+    const entry = this.apps.get(key) ?? { versions: [] };
+    entry.versions.push({
+      data: { ...data },
+      deleted: false,
+      destroyed: false,
+    });
+    this.apps.set(key, entry);
+  }
+
+  /** The current data of an app secret, for assertions. */
+  appData(key: string): Record<string, string> | null {
+    const entry = this.apps.get(key);
+    return entry ? entry.versions[entry.versions.length - 1].data : null;
+  }
+
+  private appAnswer(
+    kind: string,
+    key: string,
+    method: string,
+    parsed: URL,
+    init: PluginFetchInit | undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    body: any,
+  ): Response {
+    const denied = () => reply(403, { errors: ["permission denied"] });
+    const entry = this.apps.get(key);
+    const casMismatch = () =>
+      reply(400, {
+        errors: ["check-and-set parameter did not match the current version"],
+      });
+    if (kind === "metadata") {
+      if (method !== "GET" || parsed.searchParams.get("list")) return denied();
+      if (!entry) return reply(404, { errors: [] });
+      const versions: Record<string, unknown> = {};
+      entry.versions.forEach((version, index) => {
+        versions[String(index + 1)] = {
+          created_time: "2026-01-01T00:00:00Z",
+          deletion_time: version.deleted ? "2026-01-02T00:00:00Z" : "",
+          destroyed: version.destroyed,
+        };
+      });
+      return reply(200, {
+        data: {
+          current_version: entry.versions.length,
+          versions,
+          custom_metadata: null,
+        },
+      });
+    }
+    if (kind === "subkeys") {
+      if (method !== "GET") return denied();
+      const wanted = Number(parsed.searchParams.get("version") ?? 0);
+      const version = entry?.versions[(wanted || entry.versions.length) - 1];
+      if (!version || version.deleted || version.destroyed) {
+        return reply(404, { errors: [] });
+      }
+      const subkeys: Record<string, null> = {};
+      for (const name of Object.keys(version.data)) subkeys[name] = null;
+      return reply(200, { data: { subkeys, metadata: {} } });
+    }
+    // data
+    if (method === "POST") {
+      this.beforeAppWrite?.(method, key);
+      // A write to an existing secret is an update, which the policy lacks.
+      if (this.apps.get(key)) return denied();
+      const cas = body?.options?.cas;
+      if (cas !== undefined && Number(cas) !== 0) return casMismatch();
+      this.writeApp(key, body.data);
+      return reply(200, { data: { version: 1 } });
+    }
+    if (method === "PATCH") {
+      if (init?.headers?.["Content-Type"] !== "application/merge-patch+json") {
+        return reply(415, { errors: ["unsupported media type"] });
+      }
+      this.beforeAppWrite?.(method, key);
+      const now = this.apps.get(key);
+      const latest = now?.versions[now.versions.length - 1];
+      if (!now || !latest || latest.deleted || latest.destroyed) {
+        return reply(404, { errors: [] });
+      }
+      const cas = body?.options?.cas;
+      if (cas !== undefined && Number(cas) !== now.versions.length) {
+        return casMismatch();
+      }
+      const merged: Record<string, string> = { ...latest.data };
+      for (const [name, value] of Object.entries(body.data ?? {})) {
+        if (value === null) delete merged[name];
+        else merged[name] = value as string;
+      }
+      this.writeApp(key, merged);
+      return reply(200, { data: { version: now.versions.length } });
+    }
+    return denied();
+  }
 
   /** A wrapping token that unwraps once to `secretId`. */
   wrap(secretId = SECRET_ID): string {
@@ -161,6 +279,13 @@ export class FakeBao {
     if (!this.valid(token))
       return reply(403, { errors: ["permission denied"] });
     if (this.failKv !== null) return reply(this.failKv, { errors: ["boom"] });
+
+    const app = path.match(
+      new RegExp(`^[^/]+/(data|metadata|subkeys)/${APPS_FOLDER}/(.+)$`),
+    );
+    if (app) {
+      return this.appAnswer(app[1], app[2], method, parsed, init, body);
+    }
 
     const data = path.match(/^([^/]+)\/data\/(.+)$/);
     const meta = path.match(/^([^/]+)\/metadata\/(.+)$/);

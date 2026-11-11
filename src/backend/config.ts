@@ -111,11 +111,132 @@ export function validateSettings(
     const problem = roleIdProblem(values.roleId);
     if (problem) errors.roleId = problem;
   }
+  if (
+    "appsBasePath" in values &&
+    typeof values.appsBasePath === "string" &&
+    values.appsBasePath.trim()
+  ) {
+    const basePath =
+      typeof values.basePath === "string" && values.basePath
+        ? values.basePath
+        : DEFAULT_BASE_PATH;
+    const problem = appsBasePathProblem(values.appsBasePath.trim(), basePath);
+    if (problem) errors.appsBasePath = problem;
+  }
+  if ("allowedAppPaths" in values) {
+    const { problem } = parseAllowedAppPaths(values.allowedAppPaths);
+    if (problem) errors.allowedAppPaths = problem;
+  }
   return errors;
+}
+
+/**
+ * Create-only app secrets (1.0.5): a KV folder for other apps' secrets and
+ * the `<app>/<host>` entries under it a plugin may add new fields to. Both
+ * are empty by default, and the feature is off until an admin sets both.
+ */
+export const MAX_ALLOWED_APP_PATHS = 200;
+const APP_SEGMENT = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** One `<app>` or `<host>` part: letters, digits, '.', '_', '-'. */
+export function isAppSegment(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    APP_SEGMENT.test(value) &&
+    value !== "." &&
+    value !== ".."
+  );
+}
+
+/**
+ * The "Allowed app paths" setting: one `<app>/<host>` per line (commas
+ * work too). Blank lines are skipped. Returns the entries, or a problem.
+ */
+export function parseAllowedAppPaths(value: unknown): {
+  entries: string[];
+  problem: string | null;
+} {
+  if (value === undefined || value === null) {
+    return { entries: [], problem: null };
+  }
+  if (typeof value !== "string") {
+    return { entries: [], problem: "Enter one <app>/<host> per line" };
+  }
+  const entries: string[] = [];
+  for (const raw of value.split(/[\n,]/)) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    const parts = entry.split("/");
+    if (parts.length !== 2 || !parts.every(isAppSegment)) {
+      return {
+        entries: [],
+        problem: `"${entry.slice(0, 80)}" is not <app>/<host>: two parts of letters, digits, '.', '_' and '-'`,
+      };
+    }
+    if (!entries.includes(entry)) entries.push(entry);
+  }
+  if (entries.length > MAX_ALLOWED_APP_PATHS) {
+    return {
+      entries: [],
+      problem: `At most ${MAX_ALLOWED_APP_PATHS} app paths`,
+    };
+  }
+  return { entries, problem: null };
+}
+
+/** Why an app secrets folder is refused next to the plugin's base path. */
+export function appsBasePathProblem(
+  appsBasePath: unknown,
+  basePath: string,
+): string | null {
+  if (!isValidPath(appsBasePath)) {
+    return "Use one to four parts of letters, digits, '.', '_' and '-', joined by '/'";
+  }
+  if (
+    appsBasePath === basePath ||
+    appsBasePath.startsWith(`${basePath}/`) ||
+    basePath.startsWith(`${appsBasePath}/`)
+  ) {
+    return "The app secrets folder must be outside the base path, and the base path outside it";
+  }
+  return null;
 }
 
 export class ConfigError extends Error {
   readonly status = 409;
+}
+
+export interface AppsConfig {
+  /** The KV folder (under the KV mount) that holds `<app>/<host>`. */
+  basePath: string;
+  allowed: ReadonlySet<string>;
+}
+
+/**
+ * The create-only app secrets settings, or null when the feature is off
+ * (either setting empty). A saved value that is not valid is a ConfigError,
+ * never "allowed".
+ */
+export async function readAppsConfig(
+  ctx: PluginContext,
+): Promise<AppsConfig | null> {
+  const saved = await ctx.settings.get<unknown>("appsBasePath");
+  const appsBasePath = typeof saved === "string" ? saved.trim() || null : null;
+  const parsed = parseAllowedAppPaths(
+    await ctx.settings.get<string>("allowedAppPaths"),
+  );
+  if (!appsBasePath || (!parsed.problem && parsed.entries.length === 0)) {
+    return null;
+  }
+  if (parsed.problem) {
+    throw new ConfigError("The allowed app paths setting is not valid");
+  }
+  const basePath =
+    (await ctx.settings.get<string>("basePath")) || DEFAULT_BASE_PATH;
+  if (appsBasePathProblem(appsBasePath, basePath)) {
+    throw new ConfigError("The app secrets folder setting is not valid");
+  }
+  return { basePath: appsBasePath, allowed: new Set(parsed.entries) };
 }
 
 /** The saved settings, or a ConfigError naming what is missing or wrong. */

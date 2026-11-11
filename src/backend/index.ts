@@ -37,7 +37,7 @@ export async function activate(ctx: PluginContext) {
 
   ctx.services.provide(
     SERVICE,
-    createSecretsStore(ctx, secrets, areas, connection),
+    createSecretsStore(ctx, secrets, areas, connection, bao),
   );
 
   registerRoutes(ctx.http.router<Router>(), ctx, secrets, connection);

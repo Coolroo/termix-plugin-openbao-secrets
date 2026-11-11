@@ -38,6 +38,32 @@ export class OpenBaoError extends Error {
 export const WRAP_TOKEN_SPENT =
   "this token was already used or has expired: make a new one";
 
+/** A check-and-set write lost a race: the secret has a newer version. */
+export class CasConflictError extends OpenBaoError {
+  constructor(label: string) {
+    super(`${label}: the secret changed meanwhile`, 400);
+    this.name = "CasConflictError";
+  }
+}
+
+/** Where a KV v2 secret stands, from its metadata alone (no values). */
+export interface KvVersionState {
+  currentVersion: number;
+  /** False when the newest version is deleted or destroyed. */
+  currentLive: boolean;
+}
+
+/** OpenBao's 400 for a cas that does not match the current version. */
+function isCasMismatch(body: unknown): boolean {
+  const errors = (body as { errors?: unknown } | null)?.errors;
+  return (
+    Array.isArray(errors) &&
+    errors.some(
+      (error) => typeof error === "string" && error.includes("check-and-set"),
+    )
+  );
+}
+
 export interface KvMetadata {
   createdTime: string | null;
   updatedTime: string | null;
@@ -91,12 +117,17 @@ export function createOpenBao(deps: {
     config: Config,
     method: string,
     path: string,
-    options: { token?: string; body?: unknown; query?: string } = {},
+    options: {
+      token?: string;
+      body?: unknown;
+      query?: string;
+      contentType?: string;
+    } = {},
   ): Promise<Answer> {
     const headers: Record<string, string> = {};
     if (options.token) headers["X-Vault-Token"] = options.token;
     if (options.body !== undefined)
-      headers["Content-Type"] = "application/json";
+      headers["Content-Type"] = options.contentType ?? "application/json";
     const url = `${config.address}/v1/${encodePath(path)}${options.query ?? ""}`;
     let response: Response;
     try {
@@ -225,7 +256,7 @@ export function createOpenBao(deps: {
   async function authed(
     method: string,
     path: string,
-    options: { body?: unknown; query?: string } = {},
+    options: { body?: unknown; query?: string; contentType?: string } = {},
   ): Promise<Answer> {
     const config = await readConfig(ctx);
     let answer = await send(config, method, path, {
@@ -396,6 +427,113 @@ export function createOpenBao(deps: {
       return Array.isArray(keys)
         ? keys.filter((key): key is string => typeof key === "string")
         : [];
+    },
+
+    /**
+     * The secret's current version and whether it can be read, from its
+     * metadata (versions and times, never values). Null when there is no
+     * secret at the path.
+     */
+    async versionState(path: string): Promise<KvVersionState | null> {
+      const config = await readConfig(ctx);
+      const answer = await authed("GET", metadataPath(config, path));
+      if (answer.status === 404) return null;
+      if (answer.status !== 200) {
+        throw new OpenBaoError(
+          describe("Read metadata", answer.status),
+          answer.status,
+        );
+      }
+      const data = answer.body?.data ?? {};
+      const current = Number(data.current_version);
+      if (!Number.isInteger(current) || current < 1) {
+        throw new OpenBaoError("OpenBao's metadata has no current version");
+      }
+      const version = data.versions?.[String(current)];
+      const deleted =
+        typeof version?.deletion_time === "string" &&
+        version.deletion_time !== "" &&
+        Date.parse(version.deletion_time) <= now();
+      return {
+        currentVersion: current,
+        currentLive: Boolean(version) && !deleted && version.destroyed !== true,
+      };
+    },
+
+    /**
+     * The field names of one version of the secret (KV v2 subkeys: every
+     * value comes back as null, so no value is ever read). Null when the
+     * version cannot be read.
+     */
+    async fieldNames(path: string, version: number): Promise<string[] | null> {
+      const config = await readConfig(ctx);
+      const answer = await authed("GET", `${config.kvMount}/subkeys/${path}`, {
+        query: `?version=${version}&depth=1`,
+      });
+      if (answer.status === 404) return null;
+      if (answer.status !== 200) {
+        throw new OpenBaoError(
+          describe("Read field names", answer.status),
+          answer.status,
+        );
+      }
+      const subkeys = answer.body?.data?.subkeys;
+      return subkeys && typeof subkeys === "object" ? Object.keys(subkeys) : [];
+    },
+
+    /**
+     * Creates the secret with these fields, only if there is none yet
+     * (cas 0). Returns the new version.
+     */
+    async createFields(
+      path: string,
+      fields: Record<string, string>,
+    ): Promise<number> {
+      const config = await readConfig(ctx);
+      const answer = await authed("POST", dataPath(config, path), {
+        body: { options: { cas: 0 }, data: fields },
+      });
+      if (answer.status === 400 && isCasMismatch(answer.body)) {
+        throw new CasConflictError("Create");
+      }
+      if (answer.status !== 200 && answer.status !== 204) {
+        throw new OpenBaoError(
+          describe("Create", answer.status),
+          answer.status,
+        );
+      }
+      return Number(answer.body?.data?.version) || 1;
+    },
+
+    /**
+     * Adds fields to the secret's version `cas` (a JSON merge patch, KV v2
+     * PATCH), only if that is still the current version. Returns the new
+     * version.
+     */
+    async patchFields(
+      path: string,
+      fields: Record<string, string>,
+      cas: number,
+    ): Promise<number> {
+      const config = await readConfig(ctx);
+      const answer = await authed("PATCH", dataPath(config, path), {
+        body: { options: { cas }, data: fields },
+        contentType: "application/merge-patch+json",
+      });
+      if (answer.status === 400 && isCasMismatch(answer.body)) {
+        throw new CasConflictError("Add field");
+      }
+      if (answer.status === 404) {
+        // Deleted or destroyed between the check and the patch.
+        throw new CasConflictError("Add field");
+      }
+      if (answer.status !== 200 && answer.status !== 204) {
+        throw new OpenBaoError(
+          describe("Add field", answer.status),
+          answer.status,
+        );
+      }
+      return Number(answer.body?.data?.version) || cas + 1;
     },
 
     /** Deletes the secret with every version and its metadata. */

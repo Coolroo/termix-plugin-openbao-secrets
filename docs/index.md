@@ -74,11 +74,36 @@ In a terminal, press **Type a secret** in the toolbar. The picker opens beside t
 
 > The secret is typed at the cursor. Use it at a password prompt: at a normal prompt it shows on screen and in history.
 
-Pick a secret. It is typed where the cursor is, without Enter. Press Enter yourself.
+Pick a secret, then pick what to do with it:
+
+- **Type at the cursor**: the value is typed where the cursor is, without Enter. Press Enter yourself.
+- **Put in a variable**: the value goes into a shell variable, for commands that take a secret as an argument or in the environment.
 
 You can also bind a key to **Type a secret** in Appearance, Keybindings, or run it from the command palette. Both open the Secrets tab on the picker, and go back to your terminal after the pick.
 
-Each pick is in the audit log: who, which secret, which session and host. The value is not.
+Each pick is in the audit log: who, which secret, which session and host, and for a variable the mode `variable` and the variable's name. The value is not.
+
+### Put a secret in a variable
+
+**Put in a variable** asks for a variable name: letters, digits and `_`, not starting with a digit. The default comes from the secret's name, so `runbook-test` gives `RUNBOOK_TEST`. Names the shell uses itself, like `PATH` or `IFS`, are refused. A caution shows every time:
+
+> Use this only at a bash or zsh prompt, not inside another program: it types a command.
+
+The plugin then types, in the terminal:
+
+1. ` IFS= read -rs RUNBOOK_TEST`, with a space first, and Enter.
+2. The value, and Enter.
+
+`read -s` takes the value without showing it. The value is input to `read`, not a command, so it never goes into shell history. The space first keeps the `read` line out of history where `HISTCONTROL` has `ignorespace` (Debian and Ubuntu set `ignoreboth`); the line holds no secret either way.
+
+Use the variable in quotes, and remove it when you are done:
+
+```bash
+curl -H "Authorization: Bearer $RUNBOOK_TEST" https://api.example.com/
+unset RUNBOOK_TEST
+```
+
+A secret with more than one line, a control character, or more than 4000 bytes cannot go in a variable this way: one line of `read` does not hold it. The picker says so and types nothing. Type it at the cursor instead.
 
 ## Expiry
 
@@ -96,6 +121,42 @@ Under the KV mount and the base path:
 | Test probe      | `<base path>/_probe/<random>`             |
 
 The value is the KV field `value`. The KV custom metadata holds `createdBy`, and `expiresAt` and `note` when set.
+
+## App secrets (optional)
+
+Some setups keep other programs' secrets in the same KV engine, one secret per app and host, with one field per value: for example `apps/my-app/web-1` with the fields `token` and `hub.pub`, which a deploy script reads. **App secrets** lets another plugin (a runbook step, for example) put a new value there for you, so nobody has to open OpenBao's UI and copy it by hand.
+
+It only ever **creates**: it adds a field that does not exist yet. It never reads a value, never lists, never replaces or deletes a field. It is off until an admin sets both settings below.
+
+1. Give the AppRole's policy these lines (with the KV mount `kv` and the folder `apps`). `+/+` is exactly `<app>/<host>`, nothing deeper:
+
+   ```hcl
+   path "kv/data/apps/+/+" {
+     capabilities = ["create", "patch"]
+   }
+   path "kv/subkeys/apps/+/+" {
+     capabilities = ["read"]
+   }
+   path "kv/metadata/apps/+/+" {
+     capabilities = ["read"]
+   }
+   ```
+
+   No `read`, `update`, `list` or `delete` on these paths. `subkeys` answers a secret's field names with every value `null`; `metadata` answers versions and times. Neither holds a value. [Security](security.md#app-secrets) says what this policy can and cannot stop.
+
+2. In Settings, Plugins, **OpenBao Secrets**:
+   - **App secrets folder**: the folder in the KV mount, like `apps`. It must be outside the base path. Empty: off.
+   - **Allowed app paths**: one `<app>/<host>` per line, like `my-app/web-1`. Each part is letters, digits, `.`, `_` and `-`. A plugin can create fields only at these paths. Empty: off.
+
+3. Give the people who may do this the **Create app secrets** permission (admins have it by default). They also need **Use secrets**.
+
+How a field is created:
+
+- The secret does not exist: the plugin writes it with check-and-set 0, which OpenBao accepts only while there is still no secret.
+- The secret exists: the plugin reads its field names. If the field is there, it refuses: "the field token exists already at my-app/web-1, and is never replaced". If not, it adds the field with a JSON merge patch and check-and-set set to the version it checked, so a write in between makes OpenBao refuse the patch. It then checks again once.
+- The newest version is deleted or destroyed: it refuses, and an OpenBao admin restores it or deletes the secret first.
+
+Every try is in the audit log: who, through which plugin, the path and the field. Never the value.
 
 ## For plugin authors
 

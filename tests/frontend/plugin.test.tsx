@@ -22,6 +22,24 @@ const shell = vi.hoisted(() => ({
   tabs: { setActive: (_id: string) => {} },
 }));
 
+const toasts = vi.hoisted(() => ({
+  success: (..._args: unknown[]) => {},
+  error: (..._args: unknown[]) => {},
+}));
+
+vi.mock("sonner", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("sonner")>();
+  const toast = Object.assign(
+    (...args: Parameters<typeof actual.toast>) => actual.toast(...args),
+    actual.toast,
+    {
+      success: (...args: unknown[]) => toasts.success(...args),
+      error: (...args: unknown[]) => toasts.error(...args),
+    },
+  );
+  return { ...actual, toast };
+});
+
 vi.mock("@termix-ssh/plugin-sdk/frontend", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@termix-ssh/plugin-sdk/frontend")>();
@@ -122,6 +140,8 @@ async function setup(
 
 beforeEach(() => {
   shell.tabs.setActive = vi.fn();
+  toasts.success = vi.fn();
+  toasts.error = vi.fn();
   clearPick();
 });
 
@@ -309,6 +329,7 @@ describe("the picker", () => {
     ]);
     expect(await screen.findByText(locales.picker.caution)).toBeTruthy();
     fireEvent.click(await screen.findByText("wifi"));
+    fireEvent.click(await screen.findByText(locales.picker.typeAtCursor));
     await waitFor(() =>
       expect(sendToSession).toHaveBeenCalledWith("tab-1", VALUE, {
         run: false,
@@ -331,10 +352,147 @@ describe("the picker", () => {
       { id: "tab-3", hostId: 1, visible: true, connected: true },
     ]);
     fireEvent.click(await screen.findByText("wifi"));
+    fireEvent.click(await screen.findByText(locales.picker.typeAtCursor));
     await waitFor(() =>
       expect(sendToActive).toHaveBeenCalledWith(VALUE, { run: false }),
     );
     expect(sendToSession).not.toHaveBeenCalled();
+  });
+
+  /** Opens "Put in a variable" for the shared secret "wifi". */
+  async function openVariable() {
+    fireEvent.click(await screen.findByText("wifi"));
+    fireEvent.click(await screen.findByText(locales.picker.putInVariable));
+    const field = document.querySelector(
+      "[data-variable-form] input",
+    ) as HTMLInputElement;
+    return {
+      field,
+      put: () =>
+        fireEvent.click(
+          screen.getByText(locales.picker.putButton).closest("button")!,
+        ),
+    };
+  }
+
+  it("puts a secret in a variable: read -rs, Enter, the value, Enter", async () => {
+    const fakes = await setup();
+    const { sendToSession, sendToActive, onClose } = await openPanel([
+      { id: "tab-1", hostId: 1, visible: true, connected: true },
+      { id: "tab-2", hostId: 2, visible: true, connected: true },
+    ]);
+    const { field, put } = await openVariable();
+    // The caution shows every time, and the name comes from the secret's.
+    expect(screen.getByText(locales.picker.variableCaution)).toBeTruthy();
+    expect(
+      document.querySelector('[data-caution="variable"]')?.textContent,
+    ).toContain("bash or zsh prompt");
+    expect(field.value).toBe("WIFI");
+    put();
+    await waitFor(() => expect(sendToSession).toHaveBeenCalledTimes(2));
+    expect(sendToSession.mock.calls).toEqual([
+      ["tab-1", " IFS= read -rs WIFI", { run: true }],
+      ["tab-1", VALUE, { run: true }],
+    ]);
+    expect(sendToActive).not.toHaveBeenCalled();
+    // What the terminal gets: run: true types the text, then "\r".
+    const typed = (
+      sendToSession.mock.calls as unknown as [
+        string,
+        string,
+        { run: boolean },
+      ][]
+    )
+      .map(([, text, opts]) => text + (opts.run ? "\r" : ""))
+      .join("");
+    expect(typed).toBe(` IFS= read -rs WIFI\r${VALUE}\r`);
+    expect(fakes.post).toHaveBeenCalledWith("/type", {
+      section: "shared",
+      name: "wifi",
+      sessionId: "ssh-session-9",
+      hostId: 1,
+      mode: "variable",
+      variable: "WIFI",
+    });
+    expect(toasts.success).toHaveBeenCalledWith(
+      'Put wifi in $WIFI. Use "$WIFI" in commands, and run unset WIFI when done.',
+    );
+    expect(document.body.textContent).not.toContain(VALUE);
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it("takes the variable name the person gives", async () => {
+    const fakes = await setup();
+    const { sendToSession } = await openPanel([
+      { id: "tab-1", hostId: 1, visible: true, connected: true },
+    ]);
+    const { field, put } = await openVariable();
+    fireEvent.change(field, { target: { value: "wifi_pass2" } });
+    put();
+    await waitFor(() => expect(sendToSession).toHaveBeenCalledTimes(2));
+    expect(sendToSession.mock.calls[0]).toEqual([
+      "tab-1",
+      " IFS= read -rs wifi_pass2",
+      { run: true },
+    ]);
+    expect(fakes.post).toHaveBeenCalledWith(
+      "/type",
+      expect.objectContaining({ mode: "variable", variable: "wifi_pass2" }),
+    );
+  });
+
+  it("refuses a bad variable name with a message, and types nothing", async () => {
+    const fakes = await setup();
+    const { sendToSession, sendToActive } = await openPanel([
+      { id: "tab-1", hostId: 1, visible: true, connected: true },
+    ]);
+    const { field, put } = await openVariable();
+    for (const bad of ["1WIFI", "WI-FI", "", "wifi pass", "$(id)"]) {
+      fireEvent.change(field, { target: { value: bad } });
+      expect(
+        screen.getByText(locales.picker.variableRule.replace("{{max}}", "64")),
+      ).toBeTruthy();
+      put();
+    }
+    fireEvent.change(field, { target: { value: "PATH" } });
+    expect(
+      screen.getByText(
+        locales.picker.variableShell.replace("{{variable}}", "PATH"),
+      ),
+    ).toBeTruthy();
+    put();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fakes.post).not.toHaveBeenCalled();
+    expect(sendToSession).not.toHaveBeenCalled();
+    expect(sendToActive).not.toHaveBeenCalled();
+  });
+
+  it("types nothing when the value cannot go in a variable", async () => {
+    const post = vi.fn(async () => ({ data: { value: "line one\nrm -rf ~" } }));
+    await setup({ post: post as never });
+    const { sendToSession, onClose } = await openPanel([
+      { id: "tab-1", hostId: 1, visible: true, connected: true },
+    ]);
+    const { put } = await openVariable();
+    put();
+    await waitFor(() =>
+      expect(toasts.error).toHaveBeenCalledWith(locales.picker.variableUnfit),
+    );
+    expect(sendToSession).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("Back returns from the variable name to the two choices", async () => {
+    await setup();
+    await openPanel([
+      { id: "tab-1", hostId: 1, visible: true, connected: true },
+    ]);
+    await openVariable();
+    fireEvent.click(screen.getByText(locales.picker.back));
+    expect(screen.getByText(locales.picker.typeAtCursor)).toBeTruthy();
+    expect(screen.getByText(locales.picker.putInVariable)).toBeTruthy();
+    fireEvent.click(screen.getByText(locales.picker.back));
+    expect(await screen.findByText("wifi")).toBeTruthy();
   });
 
   it("the keybinding opens the tab in pick mode and returns to the terminal", async () => {
@@ -372,6 +530,7 @@ describe("the picker", () => {
     expect(await screen.findByText(locales.picker.caution)).toBeTruthy();
     expect(screen.getByText("Into web-4")).toBeTruthy();
     fireEvent.click(await screen.findByText("wifi"));
+    fireEvent.click(await screen.findByText(locales.picker.typeAtCursor));
     await waitFor(() =>
       expect(sendToSession).toHaveBeenCalledWith("tab-5", VALUE, {
         run: false,

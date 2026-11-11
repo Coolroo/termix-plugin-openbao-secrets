@@ -14,6 +14,10 @@
     "manageShared": {
       "title": "Manage shared secrets",
       "description": "Add, replace and delete the shared secrets."
+    },
+    "createAppSecrets": {
+      "title": "Create app secrets",
+      "description": "Let plugins add a new secret field, for you, at the app paths an admin allows. It never reads or replaces one."
     }
   },
   "settings": {
@@ -37,6 +41,16 @@
     "roleId": {
       "label": "AppRole role ID",
       "description": "The role ID of the AppRole the plugin logs in with. It is not secret. The secret ID comes through Connect below."
+    },
+    "appsBasePath": {
+      "label": "App secrets folder",
+      "description": "A folder in the KV mount where other programs read their secrets, as <folder>/<app>/<host>. Empty: plugins cannot create app secrets. It must be outside the base path.",
+      "placeholder": "apps"
+    },
+    "allowedAppPaths": {
+      "label": "Allowed app paths",
+      "description": "One <app>/<host> per line, under the app secrets folder. Plugins may add a field there that does not exist yet; they never read or replace one. Empty: off.",
+      "placeholder": "my-app/my-host"
     }
   },
   "status": {
@@ -99,7 +113,18 @@
     "noTerminal": "No open terminal took the secret",
     "failed": "Could not read the secret",
     "cancel": "Cancel",
-    "close": "Close"
+    "close": "Close",
+    "back": "Back",
+    "typeAtCursor": "Type at the cursor",
+    "putInVariable": "Put in a variable",
+    "variableCaution": "Use this only at a bash or zsh prompt, not inside another program: it types a command. The value goes into the variable without showing on screen or going into history.",
+    "variableName": "Variable name",
+    "variableHint": "Letters, digits and _, not starting with a digit.",
+    "variableRule": "Use letters, digits and _, not starting with a digit, at most {{max}} characters",
+    "variableShell": "The shell uses {{variable}} itself: pick another name",
+    "variableUnfit": "This secret has more than one line or a control character, or is too long, so it cannot go in a variable: type it at the cursor",
+    "putButton": "Put in the variable",
+    "put": "Put {{name}} in ${{variable}}. Use \"${{variable}}\" in commands, and run unset {{variable}} when done."
   },
   "connection": {
     "title": "Connection",
