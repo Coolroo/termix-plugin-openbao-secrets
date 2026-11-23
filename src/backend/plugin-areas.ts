@@ -79,7 +79,9 @@ export function createPluginAreas(ctx: PluginContext, state: StateStore) {
       if (typeof pluginId !== "string" || !PLUGIN_ID.test(pluginId)) {
         throw new AreaError("bindPlugin needs a plugin id", 400);
       }
-      const receiver = ctx.registry.consume<unknown>(
+      // Plugin API 2 answers registry reads with a Promise (the receiver is
+      // in the consumer's own process); API 1 answers at once. Await both.
+      const receiver: unknown = await ctx.registry.consume<unknown>(
         `${pluginId}.${RECEIVER_SUFFIX}`,
       );
       if (typeof receiver !== "function") {

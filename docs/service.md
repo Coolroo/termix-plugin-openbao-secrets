@@ -17,10 +17,10 @@ Declare it in your manifest. Mark it optional, so your plugin works without it. 
 ]
 ```
 
-Then get it in your backend. While OpenBao Secrets is not running, the handle is an empty object:
+Then get it in your backend. While OpenBao Secrets is not running, the handle is an empty object. Under plugin API 2 (Termix 26.11.2 and later) `services.get` answers with a Promise; `await` works on both versions:
 
 ```ts
-const store = ctx.services.get<SecretsStore>("openbao-secrets.store");
+const store = await ctx.services.get<SecretsStore>("openbao-secrets.store");
 if (!("put" in store)) {
   // OpenBao Secrets is not installed or not running.
 }
@@ -67,6 +67,8 @@ Core does not tell a provider which plugin is calling, so OpenBao Secrets cannot
 2. Call `bindPlugin("<your plugin id>")`. OpenBao Secrets calls your receiver with your area key. The key is never returned to the caller, so another plugin that calls `bindPlugin` with your id only sends your key to you.
 3. Pass `{ plugin: "<your plugin id>", key }` as the area. The key stays the same across restarts.
 
+Under plugin API 2, your manifest must list the receiver's key in its `sandbox` block (`"sandbox": { "registry": ["<your plugin id>.secretsStoreKey"] }`), or `ctx.registry.provide` throws. OpenBao Secrets 1.0.6 and later wait for the receiver that core hands over as a Promise there.
+
 Anyone may call your receiver, so take a key only while your own `bindPlugin` call is in flight.
 
 ## App secrets
@@ -107,7 +109,7 @@ A consumer plugin with the id `runbooks`, storing a value for a week and deletin
 ```ts
 let binding = false;
 let key: string | null = null;
-ctx.registry.provide("runbooks.secretsStoreKey", (given: string) => {
+await ctx.registry.provide("runbooks.secretsStoreKey", (given: string) => {
   if (!binding) throw new Error("not binding");
   key = given;
 });
