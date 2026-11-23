@@ -12,6 +12,18 @@ import { createStateStore } from "./state.js";
 /** How often secrets past their expiresAt are deleted. */
 export const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * The sweep's schedule id. Plugin API 2 (Termix 26.11.2) needs an id on
+ * every ctx.schedule.every job, listed in the manifest's sandbox.schedules;
+ * Termix 26.11.0 does not know the option and ignores it.
+ */
+export const SWEEP_SCHEDULE_ID = "expiry-sweep";
+
+/** schedule.every's options with plugin API 2's id, which SDK 1.0.22 lacks. */
+type EveryOptions = NonNullable<
+  Parameters<PluginContext["schedule"]["every"]>[2]
+> & { id?: string };
+
 /** Settings that change where or how the plugin logs in. */
 const CONNECTION_SETTINGS = [
   "address",
@@ -60,7 +72,7 @@ export async function activate(ctx: PluginContext) {
         );
       }
     },
-    { runNow: true },
+    { runNow: true, id: SWEEP_SCHEDULE_ID } as EveryOptions,
   );
 
   // Revoke the token at OpenBao when the plugin stops; it would run out on

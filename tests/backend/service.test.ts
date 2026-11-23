@@ -262,6 +262,25 @@ describe("a plugin's own area", () => {
       server!.mock.ctx.registry.provide("runbooks.secretsStoreKey", () => {}),
     ).toThrow(/may only use registry keys under "openbao-secrets."/);
   });
+
+  it("binds when ctx.registry.consume answers with a Promise (plugin API 2)", async () => {
+    server = await connected();
+    const registry = server.mock.ctx.registry as {
+      consume: (key: string) => unknown;
+    };
+    const sync = registry.consume;
+    // Under plugin API 2 the receiver lives in the consumer's own process,
+    // and core hands it over as a Promise.
+    registry.consume = (key) => Promise.resolve(sync(key));
+    const plugin = await bindAs(server, "runbooks");
+    expect(plugin.key).toMatch(/^[0-9a-f]{64}$/);
+    await server.service("alice", (store) =>
+      store.put(plugin, "rb-1/token", VALUE),
+    );
+    expect(
+      await server.service("alice", (store) => store.get(plugin, "rb-1/token")),
+    ).toBe(VALUE);
+  });
 });
 
 describe("expiry", () => {

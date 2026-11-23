@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.6
+
+Ready for plugin API 2. This release still runs only on plugin API 1 (Termix 26.11.0 and 26.11.1) and works as 1.0.5 does there. The release for Termix 26.11.2 and later follows with the switch.
+
+### Changed
+
+- The icon is Lucide's **KeyRound** icon, the same drawing. Termix 26.11.2 draws only Lucide icons in the rail, on the tab, in the terminal toolbar and side panel, and in the command palette.
+- The hourly expiry sweep has a schedule id (`expiry-sweep`), which plugin API 2 needs. Termix 26.11.0 ignores it.
+
+### Fixed
+
+- `bindPlugin` waits for the consumer's receiver from `ctx.registry.consume`, which plugin API 2 gives as a Promise. Without this, Runbooks and every other consumer would get "has no receiver" and no plugin area under plugin API 2.
+
 ## 1.0.5
 
 ### Added
